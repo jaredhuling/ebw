@@ -10,18 +10,26 @@
 ## type: should we only balance each arm to the population? (two_way)
 ##       or balance that plus trt to control? (three_way)
 ## quiet: should we tell solvecop() to be quiet?
+#' @export
 energy_balance <- function(trt,
                            x,
                            solver = "cccp",
                            type = c("ATE", "ATE.3", "ATT"),
                            constr.sum = FALSE,
-                           quiet = TRUE,
+                           standardize = TRUE,
+                           verbose = FALSE,
                            alpha = NULL)
 {
 
     type <- match.arg(type)
 
     trt <- as.vector(trt)
+
+
+    if (standardize)
+    {
+        x <- scale(x)
+    }
 
     QQ_all <- rdist(x)
 
@@ -81,12 +89,6 @@ energy_balance <- function(trt,
 
 
 
-
-
-
-
-
-
         if (constr.sum)
         {
             ub <- ubcon(10 * nn ^ (1/3), id = rownames(QQ))
@@ -96,18 +98,15 @@ energy_balance <- function(trt,
             lcqp <- cop( f = qf, lb = lb, lc = lc)
         }
 
-        res <- solvecop(lcqp, solver = solver, quiet = quiet)
+        res <- solvecop(lcqp, solver = solver, quiet = !verbose)
 
         wts_quadopt <- res$x
 
-        wts_quadopt1 <- wts_quadopt[trt == 1]
-        wts_quadopt0 <- wts_quadopt[trt != 1]
-        x1 <- x[trt == 1,]
-        x0 <- x[trt == 0,]
-        wtsall <- c(wts_quadopt0, wts_quadopt1)
-
         ### the overall objective function value
-        final_value <- energy.dist.twoway(wtsall, x0, x1, gamma = -1)
+        final_value <- energy.dist.1bal.trt(res$x, x, trt, gamma = -1)
+
+        ### the unweighted objective function value
+        unweighted_value <- energy.dist.1bal.trt(rep(1, length(res$x)), x, trt, gamma = -1)
 
     } else
     {
@@ -163,42 +162,41 @@ energy_balance <- function(trt,
             lcqp <- cop( f = qf, lb = lb, lc = lc)
         }
 
-        res <- solvecop(lcqp, solver = solver, quiet = quiet)
+        res <- solvecop(lcqp, solver = solver, quiet = !verbose)
 
         wts_quadopt <- res$x
 
-        wts_quadopt1 <- wts_quadopt[trt == 1]
-        wts_quadopt0 <- wts_quadopt[trt != 1]
-        x1 <- x[trt == 1,]
-        x0 <- x[trt == 0,]
-        wtsall <- c(wts_quadopt0, wts_quadopt1)
-
         ### the overall objective function value
-        final_value <- energy.dist.threeway(wtsall, x0, x1, gamma = -1)
+        final_value <- energy.dist.pairbal.trt(res$x, x, trt, gamma = -1)
+
+        ### the unweighted objective function value
+        unweighted_value <- energy.dist.pairbal.trt(rep(1, length(res$x)), x, trt, gamma = -1)
     }
 
-
-    wts0 <- unname(wts_quadopt)[trt != 1]
-    wts1 <- unname(wts_quadopt)[trt == 1]
-
-    list(wts = unname(wts_quadopt),
-         wts0 = wts0,
-         wts1 = wts1,
+    list(wts = unname(res$x),
+         energy_dist_unweighted = unweighted_value,
+         energy_dist_optimized  = final_value,
          opt = res,
          value = final_value)
 }
 
-
+#' @export
 energy_balance2 <- function(trt,
-                           x,
-                           solver = "cccp",
-                           type = c("ATE", "ATE.3", "ATT"),
-                           constr.sum = FALSE,
-                           quiet = TRUE,
-                           alpha = NULL)
+                            x,
+                            solver = "cccp",
+                            type = c("ATE", "ATE.3", "ATT"),
+                            constr.sum = FALSE,
+                            standardize = TRUE,
+                            verbose = FALSE,
+                            alpha = NULL)
 {
 
     type <- match.arg(type)
+
+    if (standardize)
+    {
+        x <- scale(x)
+    }
 
     trt <- as.factor(as.vector(trt))
 
@@ -226,7 +224,7 @@ energy_balance2 <- function(trt,
         AA.list[[k]][trt == trt.levels[k]] <- 1
     }
 
-    if (type == "two_way")
+    if (type == "ATE")
     {
 
         ## two_way balances the treatment arm to the full population
@@ -241,6 +239,7 @@ energy_balance2 <- function(trt,
                 aa <- 2 * as.vector(rowSums(trt_ind * QQ_all)) / (n.vec[k] * nn)
             } else
             {
+                trt_ind <- 1 * (trt == trt.levels[k])
                 QQ <- QQ - trt_ind * t( trt_ind * t(QQ_all)) / n.vec[k] ^ 2
 
                 aa <- aa + 2 * as.vector(rowSums(trt_ind * QQ_all)) / (n.vec[k] * nn)
@@ -274,20 +273,17 @@ energy_balance2 <- function(trt,
             lcqp <- cop( f = qf, lb = lb, lc = lc)
         }
 
-        res <- solvecop(lcqp, solver = solver, quiet = quiet)
+        res <- solvecop(lcqp, solver = solver, quiet = !verbose)
 
         wts_quadopt <- res$x
 
-        wts_quadopt1 <- wts_quadopt[trt == 1]
-        wts_quadopt0 <- wts_quadopt[trt != 1]
-        x1 <- x[trt == 1,]
-        x0 <- x[trt == 0,]
-        wtsall <- c(wts_quadopt0, wts_quadopt1)
-
         ### the overall objective function value
-        final_value <- energy.dist.twoway(wtsall, x0, x1, gamma = -1)
+        final_value <- energy.dist.1bal.trt(unname(res$x), x, trt, gamma = -1)
 
-    } else
+        ### the unweighted objective function value
+        unweighted_value <- energy.dist.1bal.trt(rep(1, length(res$x)), x, trt, gamma = -1)
+
+    } else if (type == "ATE.3")
     {
         ## three_way balances the treatment arm to the full population
         ##                    the control   arm to the full population
@@ -341,27 +337,21 @@ energy_balance2 <- function(trt,
             lcqp <- cop( f = qf, lb = lb, lc = lc)
         }
 
-        res <- solvecop(lcqp, solver = solver, quiet = quiet)
+        res <- solvecop(lcqp, solver = solver, quiet = !verbose)
 
         wts_quadopt <- res$x
 
-        wts_quadopt1 <- wts_quadopt[trt == 1]
-        wts_quadopt0 <- wts_quadopt[trt != 1]
-        x1 <- x[trt == 1,]
-        x0 <- x[trt == 0,]
-        wtsall <- c(wts_quadopt0, wts_quadopt1)
-
         ### the overall objective function value
-        final_value <- energy.dist.threeway(wtsall, x0, x1, gamma = -1)
+        final_value <- energy.dist.pairbal.trt(unname(res$x), x, trt, gamma = -1)
+
+        ### the unweighted objective function value
+        unweighted_value <- energy.dist.pairbal.trt(rep(1, length(res$x)), x, trt, gamma = -1)
     }
 
 
-    wts0 <- unname(wts_quadopt)[trt != 1]
-    wts1 <- unname(wts_quadopt)[trt == 1]
-
-    list(wts = unname(wts_quadopt),
-         wts0 = wts0,
-         wts1 = wts1,
+    list(wts = unname(res$x),
+         energy_dist_unweighted = unweighted_value,
+         energy_dist_optimized  = final_value,
          opt = res,
          value = final_value)
 }
@@ -431,6 +421,48 @@ weighted.energy.dist <- function(wts, x0, x1, gamma = 1)
     ) / gamma[1]
 }
 
+weighted.energy.dist.trt2ctrl <- function(wts, x, trt, gamma = 1)
+{
+
+    trt_idx <- trt == 1
+
+    x1 <- x[trt_idx,,drop=FALSE]
+    x0 <- x[!trt_idx,,drop=FALSE]
+
+    n.0  <- NROW(x0)
+    n.1  <- NROW(x1)
+
+    wts.x0 <- wts[!trt_idx]
+    wts.x1 <- wts[trt_idx]
+
+    ( -2 *  rbf.dist(x0, x1, wts.x0, wts.x1, gamma = gamma) +
+            rbf.dist(x0, x0, wts.x0, wts.x0, gamma = gamma) +
+            rbf.dist(x1, x1, wts.x1, wts.x1, gamma = gamma)
+    ) / gamma[1]
+}
+
+
+weighted.energy.dist.trt2full <- function(wts, x, trt, gamma = 1)
+{
+
+    trt_idx <- trt == 1
+
+    x1 <- x[trt_idx,,drop=FALSE]
+
+    n    <- NROW(x)
+    n.1  <- NROW(x1)
+
+    x.all <- rbind(x1, x[!trt_idx,,drop=FALSE])
+
+    wts.x  <- rep(1, n)
+    wts.x1 <- wts[trt_idx]
+
+    ( -2 *  rbf.dist(x.all, x1, wts.x, wts.x1, gamma = gamma) +
+            rbf.dist(x.all, x.all, wts.x, wts.x, gamma = gamma) +
+            rbf.dist(x1, x1, wts.x1, wts.x1, gamma = gamma)
+    ) / gamma[1]
+}
+
 
 
 energy.dist.1bal.trt <- function(wts, x, trt, gamma = -1, normalize.wts = FALSE)
@@ -450,7 +482,7 @@ energy.dist.1bal.trt <- function(wts, x, trt, gamma = -1, normalize.wts = FALSE)
     for (k in 1:K)
     {
         trt_idx       <- trt == trt.levels[k]
-        x.list[[k]]   <- x[trt_idx,]
+        x.list[[k]]   <- x[trt_idx,,drop=FALSE]
         if (normalize.wts)
         {
             wts.list[[k]] <- wts[trt_idx] / mean(wts[trt_idx])
@@ -472,8 +504,8 @@ energy.dist.1bal.trt <- function(wts, x, trt, gamma = -1, normalize.wts = FALSE)
     {
         ## dist between w*x.trt and (x.trt, x1)
 
-        e.dist.vec[k] <- ( -2 * rbf.dist(x.list[[k]], x.target, wts.list[k], rep(1, n), gamma = gamma) +
-                               rbf.dist(x.list[[k]], x.list[[k]], wts.list[k], wts.list[k], gamma = gamma) +
+        e.dist.vec[k] <- ( -2 * rbf.dist(x.list[[k]], x.target, wts.list[[k]], rep(1, n), gamma = gamma) +
+                               rbf.dist(x.list[[k]], x.list[[k]], wts.list[[k]], wts.list[[k]], gamma = gamma) +
                                rbf.dist(x.target, x.target, rep(1, n), rep(1, n), gamma = gamma)
                          ) / gamma[1]
     }
@@ -506,7 +538,7 @@ energy.dist.pairbal.trt <- function(wts, x, trt, gamma = -1, normalize.wts = FAL
     for (k in 1:K)
     {
         trt_idx       <- trt == trt.levels[k]
-        x.list[[k]]   <- x[trt_idx,]
+        x.list[[k]]   <- x[trt_idx,,drop=FALSE]
         if (normalize.wts)
         {
             wts.list[[k]] <- wts[trt_idx] / mean(wts[trt_idx])
@@ -528,8 +560,8 @@ energy.dist.pairbal.trt <- function(wts, x, trt, gamma = -1, normalize.wts = FAL
     {
         ## dist between w*x.trt and (x.trt, x1)
 
-        e.dist.vec[k] <- ( -2 * rbf.dist(x.list[[k]], x.target, wts.list[k], rep(1, n), gamma = gamma) +
-                               rbf.dist(x.list[[k]], x.list[[k]], wts.list[k], wts.list[k], gamma = gamma) +
+        e.dist.vec[k] <- ( -2 * rbf.dist(x.list[[k]], x.target, wts.list[[k]], rep(1, n), gamma = gamma) +
+                               rbf.dist(x.list[[k]], x.list[[k]], wts.list[[k]], wts.list[[k]], gamma = gamma) +
                                rbf.dist(x.target, x.target, rep(1, n), rep(1, n), gamma = gamma)
         ) / gamma[1]
     }
@@ -542,9 +574,9 @@ energy.dist.pairbal.trt <- function(wts, x, trt, gamma = -1, normalize.wts = FAL
     {
         for (j in (k+1):K)
         {
-            e.dist.pairs[k,j] <- ( -2 * rbf.dist(x.list[[k]], x.list[[j]], wts.list[k], wts.list[j], gamma = gamma) +
-                                        rbf.dist(x.list[[k]], x.list[[k]], wts.list[k], wts.list[k], gamma = gamma) +
-                                        rbf.dist(x.list[[j]], x.list[[j]], wts.list[j], wts.list[j], gamma = gamma)
+            e.dist.pairs[k,j] <- ( -2 * rbf.dist(x.list[[k]], x.list[[j]], wts.list[[k]], wts.list[[j]], gamma = gamma) +
+                                        rbf.dist(x.list[[k]], x.list[[k]], wts.list[[k]], wts.list[[k]], gamma = gamma) +
+                                        rbf.dist(x.list[[j]], x.list[[j]], wts.list[[j]], wts.list[[j]], gamma = gamma)
             ) / gamma[1]
 
             ## scale the e dist
