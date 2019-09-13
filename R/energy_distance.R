@@ -288,38 +288,47 @@ energy_balance2 <- function(trt,
         ## three_way balances the treatment arm to the full population
         ##                    the control   arm to the full population
         ## and                the treatment arm to the control arm
-        QQ1 <- trt * t( trt * t(QQ_all)) / n1 ^ 2
-        QQ0 <- (1 - trt) * t( (1 - trt) * t(QQ_all)) / n0 ^ 2
 
 
-        QQ_both <- (trt) * t( (1 - trt) * t(QQ_all)) / (n1 * n0)
+        for (k in 1:K)
+        {
+            if (k == 1)
+            {
+                trt_ind <- 1 * (trt == trt.levels[k])
+                QQ <- -trt_ind * t( trt_ind * t(QQ_all)) / n.vec[k] ^ 2
 
-        aa1 <- 2 * as.vector(rowSums(trt * QQ_all)) / (n1 * nn)
-        aa0 <- 2 * as.vector(rowSums((1 - trt) * QQ_all)) / (n0 * nn)
+                aa <- 2 * as.vector(rowSums(trt_ind * QQ_all)) / (n.vec[k] * nn)
+            } else
+            {
+                trt_ind <- 1 * (trt == trt.levels[k])
+                QQ <- QQ - trt_ind * t( trt_ind * t(QQ_all)) / n.vec[k] ^ 2
+
+                aa <- aa + 2 * as.vector(rowSums(trt_ind * QQ_all)) / (n.vec[k] * nn)
+            }
+        }
+
+        for (k in 1:(K - 1))
+        {
+            trt_ind_k <- 1 * (trt == trt.levels[k])
+            for (j in (k + 1):K)
+            {
+                trt_ind_j <- 1 * (trt == trt.levels[j])
+                QQ <- QQ + 2 * (trt_ind_k) * t( trt_ind_j * t(QQ_all)) / (n.vec[k] * n.vec[j])
+
+                QQ <- QQ - trt_ind_j * t( trt_ind_j * t(QQ_all)) / n.vec[j] ^ 2
+                QQ <- QQ - trt_ind_k * t( trt_ind_k * t(QQ_all)) / n.vec[k] ^ 2
+            }
+        }
 
 
-        aa <- aa1 + aa0
-        QQ <- 2 * QQ_both - 2 * (QQ1 + QQ0)
+        AA           <- do.call(rbind, AA.list)
+        rownames(AA) <- paste0("eq", 1:nrow(AA))
+        sum.constr   <- n.vec
 
-        AA <- matrix(1, nrow = 1, ncol = nn)
-        rownames(AA) <- "eq"
         rownames(QQ) <- paste(1:NROW(QQ))
-
 
         qf <- quadfun(Q = QQ, a = aa, id = rownames(QQ)) #quadratic obj.
         lb <- lbcon(0, id = rownames(QQ)) #lower bound
-
-        # if (sum.to.one == "all")
-        # {
-        #     AA <- matrix(1, nrow = 1, ncol = nn)
-        #     rownames(AA) <- "eq"
-        #     sum.constr <- nn
-        # } else
-        # {
-        AA <- rbind(AA1, AA0)
-        rownames(AA) <- paste0("eq", 1:nrow(AA))
-        sum.constr <- c(n1, n0)
-        # }
 
 
         lc <- lincon(A   = AA,
