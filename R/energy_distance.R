@@ -11,7 +11,7 @@
 ##       or balance that plus trt to control? (three_way)
 ## quiet: should we tell solvecop() to be quiet?
 #' @export
-energy_balance <- function(trt,
+energy_balance_old <- function(trt,
                            x,
                            solver = "cccp",
                            type = c("ATE", "ATE.3", "ATT"),
@@ -181,20 +181,21 @@ energy_balance <- function(trt,
 }
 
 #' @export
-energy_balance2 <- function(trt,
-                            x,
-                            solver = "cccp",
-                            type = c("ATE", "ATE.3", "ATT"),
-                            constr.sum = FALSE,
-                            standardize = TRUE,
-                            verbose = FALSE,
-                            alpha = NULL)
+energy_balance <- function(trt,
+                           x,
+                           solver = "cccp",
+                           type = c("ATE.3", "ATE", "ATT", "overlap"),
+                           constr.sum = FALSE,
+                           standardize = TRUE,
+                           verbose = FALSE,
+                           alpha = NULL)
 {
 
     type <- match.arg(type)
 
     if (standardize)
     {
+        x.orig <- x
         x <- scale(x)
     }
 
@@ -204,6 +205,24 @@ energy_balance2 <- function(trt,
     K     <- length(trt.levels)
     n.vec <- unname(table(trt))
     nn    <- sum(n.vec)
+
+    if (K > 2 & type == "ATT")
+    {
+        stop("type == 'ATT' cannot be used for treatments with multiple levels")
+    }
+
+    if (K > 2 & type == "overlap")
+    {
+        stop("type == 'overlap' cannot be used for treatments with multiple levels")
+    }
+
+    if (type == "ATT")
+    {
+        if (trt.levels[2] != "1")
+        {
+            stop("for type == 'ATT', 'trt' must take the value 1 for treated units ")
+        }
+    }
 
     QQ_all <- rdist(x)
 
@@ -275,7 +294,7 @@ energy_balance2 <- function(trt,
 
         res <- solvecop(lcqp, solver = solver, quiet = !verbose)
 
-        wts_quadopt <- res$x
+        wts_quadopt <- unname(res$x)
 
         ### the overall objective function value
         final_value <- energy.dist.1bal.trt(unname(res$x), x, trt, gamma = -1)
@@ -348,17 +367,78 @@ energy_balance2 <- function(trt,
 
         res <- solvecop(lcqp, solver = solver, quiet = !verbose)
 
-        wts_quadopt <- res$x
+        wts_quadopt <- unname(res$x)
 
         ### the overall objective function value
         final_value <- energy.dist.pairbal.trt(unname(res$x), x, trt, gamma = -1)
 
         ### the unweighted objective function value
         unweighted_value <- energy.dist.pairbal.trt(rep(1, length(res$x)), x, trt, gamma = -1)
+    } else if (type == "ATT")
+    {
+        ## these are the untreated patients
+        trt_ind <- 1 * (trt == trt.levels[1])
+        QQ <- -trt_ind * t( trt_ind * t(QQ_all)) / n.vec[1] ^ 2
+
+        aa <- 2 * as.vector(rowSums(trt_ind * QQ_all)) / (n.vec[1] * nn)
+    } else if (type == "overlap")
+    {
+        ## these are the treated patients
+        trt_ind <- 1 * (trt == trt.levels[2])
+
+        QQ1 <- trt_ind * t( trt_ind * t(QQ_all)) / n.vec[2] ^ 2
+        QQ0 <- (1 - trt_ind) * t( (1 - trt_ind) * t(QQ_all)) / n.vec[1] ^ 2
+
+
+
+        QQ_both <- (trt_ind) * t( (1 - trt_ind) * t(QQ_all)) / (n.vec[1] * n.vec[2])
+
+        QQ <- 2 * QQ_both - (QQ1 + QQ0)
+
+        AA <- matrix(1, nrow = 1, ncol = nn)
+        rownames(AA) <- "eq"
+        rownames(QQ) <- paste(1:NROW(QQ))
+
+
+        qf <- quadfun(Q = QQ, id = rownames(QQ)) #quadratic obj.
+        lb <- lbcon(0, id = rownames(QQ))
+        ub <- ubcon(1, id = rownames(QQ))
+
+
+        lcqp <- cop( f = qf, lb = lb, ub = ub)
+
+        res <- solvecop(lcqp, solver = solver, quiet = !verbose)
+
+        wts_quadopt <- unname(res$x)
+
+        #wts_quadopt[trt_ind == 1] <- 1
+
+
+        ### the overall objective function value
+        final_value <- weighted.energy.dist.trt2ctrl(unname(res$x), x, trt, gamma = -1)
+
+        ### the unweighted objective function value
+        unweighted_value <- weighted.energy.dist.trt2ctrl(rep(1, length(res$x)), x, trt, gamma = -1)
     }
 
 
-    list(wts = unname(res$x),
+    if (type %in% c("ATE", "ATE.3"))
+    {
+        estimand <- "ATE"
+    } else if (type %in% c("ATT"))
+    {
+        estimand <- "ATT"
+    } else if (type == "overlap")
+    {
+        estimand <- "overlap"
+    }
+
+
+    list(weights = wts_quadopt,
+         treat = trt,
+         estimand = estimand,
+         method = type,
+         covs = if (standardize) {x.orig} else {x},
          energy_dist_unweighted = unweighted_value,
          energy_dist_optimized  = final_value,
          opt = res,
@@ -430,7 +510,7 @@ weighted.energy.dist <- function(wts, x0, x1, gamma = 1)
     ) / gamma[1]
 }
 
-weighted.energy.dist.trt2ctrl <- function(wts, x, trt, gamma = 1)
+weighted.energy.dist.trt2ctrl <- function(wts, x, trt, gamma = 1, normalize.wts = FALSE)
 {
 
     trt_idx <- trt == 1
@@ -441,8 +521,15 @@ weighted.energy.dist.trt2ctrl <- function(wts, x, trt, gamma = 1)
     n.0  <- NROW(x0)
     n.1  <- NROW(x1)
 
-    wts.x0 <- wts[!trt_idx]
-    wts.x1 <- wts[trt_idx]
+    if (normalize.wts)
+    {
+        wts.x0 <- wts[!trt_idx] / mean(wts[!trt_idx])
+        wts.x1 <- wts[trt_idx] / mean(wts[trt_idx])
+    } else
+    {
+        wts.x0 <- wts[!trt_idx]
+        wts.x1 <- wts[trt_idx]
+    }
 
     ( -2 *  rbf.dist(x0, x1, wts.x0, wts.x1, gamma = gamma) +
             rbf.dist(x0, x0, wts.x0, wts.x0, gamma = gamma) +
@@ -451,7 +538,7 @@ weighted.energy.dist.trt2ctrl <- function(wts, x, trt, gamma = 1)
 }
 
 
-weighted.energy.dist.trt2full <- function(wts, x, trt, gamma = 1)
+weighted.energy.dist.trt2full <- function(wts, x, trt, gamma = 1, normalize.wts = FALSE)
 {
 
     trt_idx <- trt == 1
@@ -465,6 +552,16 @@ weighted.energy.dist.trt2full <- function(wts, x, trt, gamma = 1)
 
     wts.x  <- rep(1, n)
     wts.x1 <- wts[trt_idx]
+
+    if (normalize.wts)
+    {
+        wts.x  <- rep(1, n)
+        wts.x1 <- wts[trt_idx] / mean(wts[trt_idx])
+    } else
+    {
+        wts.x  <- rep(1, n)
+        wts.x1 <- wts[trt_idx]
+    }
 
     ( -2 *  rbf.dist(x.all, x1, wts.x, wts.x1, gamma = gamma) +
             rbf.dist(x.all, x.all, wts.x, wts.x, gamma = gamma) +
