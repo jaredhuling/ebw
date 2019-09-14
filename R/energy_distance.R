@@ -1,197 +1,43 @@
 
-
-##  This is the main function for estimating
-##  "energy balancing weights"
-##
-##
-## trt is a treatment vector taking values 0 and 1
-## x is a matrix of covariates (number of rows = length of trt)
-## solver is the solver type passed to solvecop()
-## type: should we only balance each arm to the population? (two_way)
-##       or balance that plus trt to control? (three_way)
-## quiet: should we tell solvecop() to be quiet?
-#' @export
-energy_balance_old <- function(trt,
-                           x,
-                           solver = "cccp",
-                           type = c("ATE", "ATE.3", "ATT"),
-                           constr.sum = FALSE,
-                           standardize = TRUE,
-                           verbose = FALSE,
-                           alpha = NULL)
-{
-
-    type <- match.arg(type)
-
-    trt <- as.vector(trt)
-
-
-    if (standardize)
-    {
-        x <- scale(x)
-    }
-
-    QQ_all <- rdist(x)
-
-    if (!is.null(alpha))
-    {
-        QQ_all <- -exp(alpha * QQ_all ^ 2)
-    }
-
-    n1 <- sum(trt)
-    n0 <- sum(1-trt)
-    nn <- length(trt)
-
-    N  <- nn + n0 + n1
-
-
-    AA1 <- matrix(1, nrow = 1, ncol = nn)
-    AA0 <- matrix(1, nrow = 1, ncol = nn)
-
-    AA1[trt != 1] <- 0
-    AA0[trt == 1] <- 0
-
-    if (type == "two_way")
-    {
-        ## two_way balances the treatment arm to the full population
-        ## and              the control   arm to the full population
-        QQ1 <- trt * t( trt * t(QQ_all)) / n1 ^ 2
-        QQ0 <- (1 - trt) * t( (1 - trt) * t(QQ_all)) / n0 ^ 2
-
-        aa1 <- 2 * as.vector(rowSums(trt * QQ_all)) / (n1 * nn)
-        aa0 <- 2 * as.vector(rowSums((1 - trt) * QQ_all)) / (n0 * nn)
-
-
-        aa <- aa1 + aa0
-        QQ <- -(QQ1 + QQ0)
-        rownames(QQ) <- paste(1:NROW(QQ))
-
-        qf <- quadfun(Q = QQ, a = aa, id = rownames(QQ)) #quadratic obj.
-        lb <- lbcon(0, id = rownames(QQ)) #lower bound
-
-        # if (sum.to.one == "all")
-        # {
-        #     AA <- matrix(1, nrow = 1, ncol = nn)
-        #     rownames(AA) <- "eq"
-        #     sum.constr <- nn
-        # } else
-        # {
-        AA <- rbind(AA1, AA0)
-        rownames(AA) <- paste0("eq", 1:nrow(AA))
-        sum.constr <- c(n1, n0)
-        # }
-
-
-        lc <- lincon(A   = AA,
-                     dir = rep("==", length(sum.constr)),
-                     val = sum.constr,
-                     id  = rownames(QQ)) #linear constraint
-
-
-
-        if (constr.sum)
-        {
-            ub <- ubcon(10 * nn ^ (1/3), id = rownames(QQ))
-            lcqp <- cop( f = qf, lb = lb, lc = lc, ub = ub)
-        } else
-        {
-            lcqp <- cop( f = qf, lb = lb, lc = lc)
-        }
-
-        res <- solvecop(lcqp, solver = solver, quiet = !verbose)
-
-        wts_quadopt <- res$x
-
-        ### the overall objective function value
-        final_value <- energy.dist.1bal.trt(res$x, x, trt, gamma = -1)
-
-        ### the unweighted objective function value
-        unweighted_value <- energy.dist.1bal.trt(rep(1, length(res$x)), x, trt, gamma = -1)
-
-    } else
-    {
-        ## three_way balances the treatment arm to the full population
-        ##                    the control   arm to the full population
-        ## and                the treatment arm to the control arm
-        QQ1 <- trt * t( trt * t(QQ_all)) / n1 ^ 2
-        QQ0 <- (1 - trt) * t( (1 - trt) * t(QQ_all)) / n0 ^ 2
-
-
-        QQ_both <- (trt) * t( (1 - trt) * t(QQ_all)) / (n1 * n0)
-
-        aa1 <- 2 * as.vector(rowSums(trt * QQ_all)) / (n1 * nn)
-        aa0 <- 2 * as.vector(rowSums((1 - trt) * QQ_all)) / (n0 * nn)
-
-
-        aa <- aa1 + aa0
-        QQ <- 2 * QQ_both - 2 * (QQ1 + QQ0)
-
-        AA <- matrix(1, nrow = 1, ncol = nn)
-        rownames(AA) <- "eq"
-        rownames(QQ) <- paste(1:NROW(QQ))
-
-
-        qf <- quadfun(Q = QQ, a = aa, id = rownames(QQ)) #quadratic obj.
-        lb <- lbcon(0, id = rownames(QQ)) #lower bound
-
-        # if (sum.to.one == "all")
-        # {
-        #     AA <- matrix(1, nrow = 1, ncol = nn)
-        #     rownames(AA) <- "eq"
-        #     sum.constr <- nn
-        # } else
-        # {
-        AA <- rbind(AA1, AA0)
-        rownames(AA) <- paste0("eq", 1:nrow(AA))
-        sum.constr <- c(n1, n0)
-        # }
-
-
-        lc <- lincon(A   = AA,
-                     dir = rep("==", length(sum.constr)),
-                     val = sum.constr,
-                     id  = rownames(QQ)) #linear constraint
-
-
-        if (constr.sum)
-        {
-            ub <- ubcon(10 * nn ^ (1/3), id = rownames(QQ))
-            lcqp <- cop( f = qf, lb = lb, lc = lc, ub = ub)
-        } else
-        {
-            lcqp <- cop( f = qf, lb = lb, lc = lc)
-        }
-
-        res <- solvecop(lcqp, solver = solver, quiet = !verbose)
-
-        wts_quadopt <- res$x
-
-        ### the overall objective function value
-        final_value <- energy.dist.pairbal.trt(res$x, x, trt, gamma = -1)
-
-        ### the unweighted objective function value
-        unweighted_value <- energy.dist.pairbal.trt(rep(1, length(res$x)), x, trt, gamma = -1)
-    }
-
-    list(wts = unname(res$x),
-         energy_dist_unweighted = unweighted_value,
-         energy_dist_optimized  = final_value,
-         opt = res,
-         value = final_value)
-}
-
+#' Construction of energy balancing weights
+#'
+#' @description Constructs energy balancing weights for estimation of average treatment effects
+#'
+#' @param trt vector indicating treatment assignment. Can be a factor or a vector of integers, with each
+#' unique value indicating a different treatment option. When \code{method = 'ATT'}, \code{trt} MUST take
+#' the value \code{1} to indicate treatment.
+#' @param x matrix of covariates with number of rows equal to the length of \code{trt} and each column is a
+#' \strong{pre-treatment} covariate to be balanced between treatment groups.
+#' @param method What method/estimand should be used? \code{"ATE.3"} estimates weights for estimation of the
+#' ATE where the energy distance criterion to be optimized involves all pairwise energy distances. This
+#' method is generally better than \code{"ATE"}, which also estimates the ATE, but only involves energy distances
+#' bbetween each treatment group and the full sample. \code{"ATT"} estimates weights for estimating the ATT
+#' @param standardized logical scalar which results in standardization of the covariates when it takes the value \code{TRUE}
+#' and when it takes the value \code{FALSE}, covariates are not standardized. The default is \code{TRUE}, which is
+#' highly recommended
+#' @param verbose should we print out intermediate results of optimization process? \code{TRUE} or \code{FALSE}
+#' @param constr.sum should each weight be constrained to be less than \code{10 * nrow(x) ^ (1/3)}? Defaults to \code{FALSE}.
+#' This option is generally not needed.
+#' @return An object of class \code{"energy_balancing_weights"} with elements:
+#' \item{weights}{A vector of length \code{nrow(x)} containing the estimates sample weights }
+#' \item{trt}{Treatment vector}
+#' \item{estimand}{The estimand requested}
+#' \item{method}{The method used}
+#' \item{covs}{The covariates that were used for balancing}
+#' \item{energy_dist_unweighted}{The energy distance of the raw data (ie with all weights = 1)}
+#' \item{energy_dist_optimized}{The weighted energy distance using the optimal energy balancing weights}
+#' \item{opt}{The optimization object returned by \code{solvecop()}}
+#'
 #' @export
 energy_balance <- function(trt,
                            x,
-                           solver = "cccp",
-                           type = c("ATE.3", "ATE", "ATT", "overlap"),
-                           constr.sum = FALSE,
+                           method      = c("ATE.3", "ATE", "ATT", "overlap"),
                            standardize = TRUE,
-                           verbose = FALSE,
-                           alpha = NULL)
+                           verbose     = FALSE,
+                           constr.sum  = FALSE)
 {
 
-    type <- match.arg(type)
+    type <- match.arg(method)
 
     if (standardize)
     {
@@ -202,9 +48,11 @@ energy_balance <- function(trt,
     trt <- as.factor(as.vector(trt))
 
     trt.levels <- levels(trt)
-    K     <- length(trt.levels)
-    n.vec <- unname(table(trt))
-    nn    <- sum(n.vec)
+    K          <- length(trt.levels)
+    n.vec      <- unname(table(trt))
+    nn         <- sum(n.vec)
+
+    solver = "cccp"
 
     if (K > 2 & type == "ATT")
     {
@@ -224,6 +72,7 @@ energy_balance <- function(trt,
         }
     }
 
+    alpha       = NULL
     QQ_all <- rdist(x)
 
     if (!is.null(alpha))
@@ -434,11 +283,224 @@ energy_balance <- function(trt,
     }
 
 
-    list(weights = wts_quadopt,
-         treat = trt,
-         estimand = estimand,
-         method = type,
-         covs = if (standardize) {x.orig} else {x},
+    ret <- list(weights                = wts_quadopt,
+                treat                  = trt,
+                estimand               = estimand,
+                method                 = type,
+                covs                   = if (standardize) {x.orig} else {x},
+                energy_dist_unweighted = unweighted_value,
+                energy_dist_optimized  = final_value,
+                opt                    = res
+                )
+    class(ret) <- c("energy_balancing_weights")
+}
+
+
+
+# energy.dist.1bal.trt <- function(wts, x, trt, gamma = -1, normalize.wts = FALSE)
+
+
+#' @export
+weighted_energy_distance <- function(weights = rep(1, NROW(x)),
+                                     x,
+                                     trt,
+                                     type = c("two_way", "three_way"),
+                                     normalize.wts = TRUE)
+{
+    type <- match.arg(type)
+
+    stopifnot(length(weights) == NROW(x))
+    stopifnot(length(weights) == NROW(trt))
+
+    if (type == "two_way")
+    {
+        return(energy.dist.1bal.trt(wts = weights, x = x, trt = trt, gamma = -1,
+                                    normalize.wts = normalize.wts))
+    } else
+    {
+        return(energy.dist.pairbal.trt(wts = weights, x = x, trt = trt, gamma = -1,
+                                       normalize.wts = normalize.wts))
+    }
+}
+
+
+
+
+
+
+##  This is the main function for estimating
+##  "energy balancing weights"
+##
+##
+## trt is a treatment vector taking values 0 and 1
+## x is a matrix of covariates (number of rows = length of trt)
+## solver is the solver type passed to solvecop()
+## type: should we only balance each arm to the population? (two_way)
+##       or balance that plus trt to control? (three_way)
+## quiet: should we tell solvecop() to be quiet?
+energy_balance_old <- function(trt,
+                               x,
+                               solver = "cccp",
+                               type = c("ATE", "ATE.3", "ATT"),
+                               constr.sum = FALSE,
+                               standardize = TRUE,
+                               verbose = FALSE,
+                               alpha = NULL)
+{
+
+    type <- match.arg(type)
+
+    trt <- as.vector(trt)
+
+
+    if (standardize)
+    {
+        x <- scale(x)
+    }
+
+    QQ_all <- rdist(x)
+
+    if (!is.null(alpha))
+    {
+        QQ_all <- -exp(alpha * QQ_all ^ 2)
+    }
+
+    n1 <- sum(trt)
+    n0 <- sum(1-trt)
+    nn <- length(trt)
+
+    N  <- nn + n0 + n1
+
+
+    AA1 <- matrix(1, nrow = 1, ncol = nn)
+    AA0 <- matrix(1, nrow = 1, ncol = nn)
+
+    AA1[trt != 1] <- 0
+    AA0[trt == 1] <- 0
+
+    if (type == "two_way")
+    {
+        ## two_way balances the treatment arm to the full population
+        ## and              the control   arm to the full population
+        QQ1 <- trt * t( trt * t(QQ_all)) / n1 ^ 2
+        QQ0 <- (1 - trt) * t( (1 - trt) * t(QQ_all)) / n0 ^ 2
+
+        aa1 <- 2 * as.vector(rowSums(trt * QQ_all)) / (n1 * nn)
+        aa0 <- 2 * as.vector(rowSums((1 - trt) * QQ_all)) / (n0 * nn)
+
+
+        aa <- aa1 + aa0
+        QQ <- -(QQ1 + QQ0)
+        rownames(QQ) <- paste(1:NROW(QQ))
+
+        qf <- quadfun(Q = QQ, a = aa, id = rownames(QQ)) #quadratic obj.
+        lb <- lbcon(0, id = rownames(QQ)) #lower bound
+
+        # if (sum.to.one == "all")
+        # {
+        #     AA <- matrix(1, nrow = 1, ncol = nn)
+        #     rownames(AA) <- "eq"
+        #     sum.constr <- nn
+        # } else
+        # {
+        AA <- rbind(AA1, AA0)
+        rownames(AA) <- paste0("eq", 1:nrow(AA))
+        sum.constr <- c(n1, n0)
+        # }
+
+
+        lc <- lincon(A   = AA,
+                     dir = rep("==", length(sum.constr)),
+                     val = sum.constr,
+                     id  = rownames(QQ)) #linear constraint
+
+
+
+        if (constr.sum)
+        {
+            ub <- ubcon(10 * nn ^ (1/3), id = rownames(QQ))
+            lcqp <- cop( f = qf, lb = lb, lc = lc, ub = ub)
+        } else
+        {
+            lcqp <- cop( f = qf, lb = lb, lc = lc)
+        }
+
+        res <- solvecop(lcqp, solver = solver, quiet = !verbose)
+
+        wts_quadopt <- res$x
+
+        ### the overall objective function value
+        final_value <- energy.dist.1bal.trt(res$x, x, trt, gamma = -1)
+
+        ### the unweighted objective function value
+        unweighted_value <- energy.dist.1bal.trt(rep(1, length(res$x)), x, trt, gamma = -1)
+
+    } else
+    {
+        ## three_way balances the treatment arm to the full population
+        ##                    the control   arm to the full population
+        ## and                the treatment arm to the control arm
+        QQ1 <- trt * t( trt * t(QQ_all)) / n1 ^ 2
+        QQ0 <- (1 - trt) * t( (1 - trt) * t(QQ_all)) / n0 ^ 2
+
+
+        QQ_both <- (trt) * t( (1 - trt) * t(QQ_all)) / (n1 * n0)
+
+        aa1 <- 2 * as.vector(rowSums(trt * QQ_all)) / (n1 * nn)
+        aa0 <- 2 * as.vector(rowSums((1 - trt) * QQ_all)) / (n0 * nn)
+
+
+        aa <- aa1 + aa0
+        QQ <- 2 * QQ_both - 2 * (QQ1 + QQ0)
+
+        AA <- matrix(1, nrow = 1, ncol = nn)
+        rownames(AA) <- "eq"
+        rownames(QQ) <- paste(1:NROW(QQ))
+
+
+        qf <- quadfun(Q = QQ, a = aa, id = rownames(QQ)) #quadratic obj.
+        lb <- lbcon(0, id = rownames(QQ)) #lower bound
+
+        # if (sum.to.one == "all")
+        # {
+        #     AA <- matrix(1, nrow = 1, ncol = nn)
+        #     rownames(AA) <- "eq"
+        #     sum.constr <- nn
+        # } else
+        # {
+        AA <- rbind(AA1, AA0)
+        rownames(AA) <- paste0("eq", 1:nrow(AA))
+        sum.constr <- c(n1, n0)
+        # }
+
+
+        lc <- lincon(A   = AA,
+                     dir = rep("==", length(sum.constr)),
+                     val = sum.constr,
+                     id  = rownames(QQ)) #linear constraint
+
+
+        if (constr.sum)
+        {
+            ub <- ubcon(10 * nn ^ (1/3), id = rownames(QQ))
+            lcqp <- cop( f = qf, lb = lb, lc = lc, ub = ub)
+        } else
+        {
+            lcqp <- cop( f = qf, lb = lb, lc = lc)
+        }
+
+        res <- solvecop(lcqp, solver = solver, quiet = !verbose)
+
+        wts_quadopt <- res$x
+
+        ### the overall objective function value
+        final_value <- energy.dist.pairbal.trt(res$x, x, trt, gamma = -1)
+
+        ### the unweighted objective function value
+        unweighted_value <- energy.dist.pairbal.trt(rep(1, length(res$x)), x, trt, gamma = -1)
+    }
+
+    list(wts = unname(res$x),
          energy_dist_unweighted = unweighted_value,
          energy_dist_optimized  = final_value,
          opt = res,
