@@ -5,7 +5,7 @@
 \title{Construction of energy balancing weights}
 \usage{
 energy_balance(trt, x, method = c("ATE.3", "ATE", "ATT", "overlap"),
-  standardize = TRUE, verbose = FALSE, constr.sum = FALSE)
+  standardize = TRUE, verbose = FALSE, max.constr = FALSE)
 }
 \arguments{
 \item{trt}{vector indicating treatment assignment. Can be a factor or a vector of integers, with each
@@ -22,7 +22,7 @@ bbetween each treatment group and the full sample. \code{"ATT"} estimates weight
 
 \item{verbose}{should we print out intermediate results of optimization process? \code{TRUE} or \code{FALSE}}
 
-\item{constr.sum}{should each weight be constrained to be less than \code{10 * nrow(x) ^ (1/3)}? Defaults to \code{FALSE}.
+\item{max.constr}{should each weight be constrained to be less than \code{10 * nrow(x) ^ (1/3)}? Defaults to \code{FALSE}.
 This option is generally not needed.}
 
 \item{standardized}{logical scalar which results in standardization of the covariates when it takes the value \code{TRUE}

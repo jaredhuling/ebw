@@ -16,7 +16,7 @@
 #' and when it takes the value \code{FALSE}, covariates are not standardized. The default is \code{TRUE}, which is
 #' highly recommended
 #' @param verbose should we print out intermediate results of optimization process? \code{TRUE} or \code{FALSE}
-#' @param constr.sum should each weight be constrained to be less than \code{10 * nrow(x) ^ (1/3)}? Defaults to \code{FALSE}.
+#' @param max.constr should each weight be constrained to be less than \code{10 * nrow(x) ^ (1/3)}? Defaults to \code{FALSE}.
 #' This option is generally not needed.
 #' @return An object of class \code{"energy_balancing_weights"} with elements:
 #' \item{weights}{A vector of length \code{nrow(x)} containing the estimates sample weights }
@@ -34,7 +34,7 @@ energy_balance <- function(trt,
                            method      = c("ATE.3", "ATE", "ATT", "overlap"),
                            standardize = TRUE,
                            verbose     = FALSE,
-                           constr.sum  = FALSE)
+                           max.constr  = FALSE)
 {
 
     type <- match.arg(method)
@@ -72,7 +72,8 @@ energy_balance <- function(trt,
         }
     }
 
-    alpha       = NULL
+    constr.sum  <- max.constr
+    alpha       <- NULL
     QQ_all <- rdist(x)
 
     if (!is.null(alpha))
@@ -297,13 +298,30 @@ energy_balance <- function(trt,
 
 
 
-# energy.dist.1bal.trt <- function(wts, x, trt, gamma = -1, normalize.wts = FALSE)
 
 
+#' Calculation of weighted energy distance
+#'
+#' @description Calculates weighted energy distances between treatment groups and the full sample
+#'
+#' @param weights a vector of sample weights
+#' @param trt trt vector indicating treatment assignment. Can be a factor or a vector of integers, with each
+#' unique value indicating a different treatment option. When \code{method = 'ATT'}, \code{trt} MUST take
+#' the value \code{1} to indicate treatment.
+#' @param x matrix of covariates with number of rows equal to the length of \code{weights} and each column is a
+#' covariate
+#' @param type Which energy distance type to use. if \code{"two_way"}, then the energy distance is the sum of
+#' all of the weighted energy distances between each treatment group and the full sample. If \code{"three_way"},
+#' the energy distance is all of the terms in the \code{"two_way"} distance plus the sum of all weighted energy
+#' distances between every pair of treatment groups.
+#' @param normalize.wts Defaults to \code{TRUE}, which ensures that the weights within each treatment group
+#' sum to the number of samples in that group. If \code{FALSE}, the weighted energy distance may be ill-defined.
+#' @return a scalar value of the requested energy distance
+#'
 #' @export
 weighted_energy_distance <- function(weights = rep(1, NROW(x)),
-                                     x,
                                      trt,
+                                     x,
                                      type = c("two_way", "three_way"),
                                      normalize.wts = TRUE)
 {
