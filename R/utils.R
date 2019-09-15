@@ -1,8 +1,33 @@
 
-
+#' Calculation of weighted energy distance
+#'
+#' @description Calculates weighted energy distances between treatment groups and the full sample
+#'
+#' @param y vector of responses
+#' @param trt vector indicating treatment assignment of length equal to the length of \code{y}. It should
+#' take the value 1 for treated and any other value to indicate not treated
+#' @param weights a vector of sample weights of length equal to the length of \code{y}
+#' @return an estimate of a causal contrast
+#'
 #' @export
 ipw_est <- function(y, trt, weights)
 {
+    stopifnot(length(trt) == length(y))
+    stopifnot(length(trt) == length(weights))
+
+    if (is.factor(trt))
+    {
+        trt.levels <- levels(trt)
+    } else
+    {
+        trt.levels <- unique(trt)
+    }
+
+    if (!(1 %in% trt.levels))
+    {
+        stop("'trt' must take value 1 to indicate treated")
+    }
+
     sum( (trt * y * weights)[trt == 1] ) / sum(weights[trt == 1]) -
         sum( ((1 - trt) * y * weights)[trt != 1] ) / sum(weights[trt != 1])
 }

@@ -29,8 +29,8 @@
 sim_confounded_data <- function(n.obs, n.vars = 10,
                                 n.obs.test       = 10000,
                                 AR.cor           = 0,
-                                propensity.model = c("I", "II", "III"),
-                                y.model          = c("A", "B", "C", "D"))
+                                propensity.model = c("I", "II", "III", "IV"),
+                                y.model          = c("A", "B", "C", "D", "E"))
 {
     y.model          <- match.arg(y.model)
     propensity.model <- match.arg(propensity.model)
@@ -50,12 +50,14 @@ sim_confounded_data <- function(n.obs, n.vars = 10,
                            "A" = y.model.A,
                            "B" = y.model.B,
                            "C" = y.model.C,
-                           "D" = y.model.D)
+                           "D" = y.model.D,
+                           "E" = y.model.E)
 
     prop.model.func <- switch(propensity.model,
                               "I"   = prop.model.I,
                               "II"  = prop.model.II,
-                              "III" = prop.model.III)
+                              "III" = prop.model.III,
+                              "IV"  = prop.model.IV)
 
     prob_trt      <- prop.model.func(x)
     prob_trt_test <- prop.model.func(x.test)
@@ -139,6 +141,38 @@ prop.model.III <- function(x)
     prob_trt
 }
 
+prop.model.IV <- function(x)
+{
+
+    xbeta <- numeric(NROW(x))
+
+    nv <- 4
+    ct <- 0
+    for (j in 1:(nv - 1))
+    {
+        for (k in (j:nv))
+        {
+            ct <- ct + 1
+
+            if (ct %% 2 == 0)
+            {
+                sgn <- 1
+            } else
+            {
+                sgn <- -1
+            }
+
+            xbeta <- xbeta + sgn * (x[,j] * x[,k])
+        }
+    }
+
+    xbeta <- 10 * xbeta / var(xbeta)
+
+    prob_trt <- 1 / (1 + exp(-xbeta))
+
+    prob_trt
+}
+
 y.model.A <- function(x, trt, sd.error = 1)
 {
     trt_eff <- NULL
@@ -146,6 +180,7 @@ y.model.A <- function(x, trt, sd.error = 1)
     E_y_given_x_trt <- function(xx, trtt)
     {
         E_y <- 210 + 10 * trt + 2 * xx[,1] ^ 2 + 2 * xx[,2]^2 - 1 / (0.1 + (xx[,1] * xx[,2]) ^ 2)  - 5 * xx[,3] * xx[,4] - 5 * xx[,1] * xx[,2]
+        E_y
     }
 
     n <- NROW(x)
@@ -171,6 +206,7 @@ y.model.B <- function(x, trt, sd.error = 1)
     E_y_given_x_trt <- function(xx, trtt)
     {
         E_y <- 210 + (1 * trtt + 1) * (27.4 * xx[,1] + 13.7 * xx[,2] + 13.7 * xx[,3] + 13.7 * xx[,4])
+        E_y
     }
 
     n <- NROW(x)
@@ -194,6 +230,7 @@ y.model.C <- function(x, trt, sd.error = 1)
     E_y_given_x_trt <- function(xx, trtt)
     {
         E_y <- 210 + (2 * trtt + 0.5) * (5 * xx[,1] * xx[,2] + 5 * xx[,3] * xx[,4] - 5 * (xx[,1] - xx[,2]) ^ 2 + 5 * (xx[,3] - xx[,4]) ^ 2  )
+        E_y
     }
 
     n <- NROW(x)
@@ -217,6 +254,7 @@ y.model.D <- function(x, trt, sd.error = 1)
     E_y_given_x_trt <- function(xx, trtt)
     {
         E_y <- 210 + (27.4 * xx[,1] + 13.7 * xx[,2] + 13.7 * xx[,3] + 13.7 * xx[,4])
+        E_y
     }
 
     n <- NROW(x)
@@ -226,6 +264,56 @@ y.model.D <- function(x, trt, sd.error = 1)
     individual_trt_eff <- E_y_given_x_trt(x, 1) - E_y_given_x_trt(x, 0)
 
     trt_eff <- 0
+
+    trt_eff_sample <- mean(individual_trt_eff)
+
+    list(y = y,
+         trt_eff_sample     = trt_eff_sample,
+         individual_trt_eff = individual_trt_eff,
+         trt_eff = trt_eff)
+}
+
+
+y.model.E <- function(x, trt, sd.error = 1)
+{
+    trt_eff <- NULL
+
+    nv <- 4
+
+    E_y_given_x_trt <- function(xx, trtt)
+    {
+
+        xbeta <- numeric(NROW(x))
+
+        ct <- 0
+        for (j in 1:(nv - 1))
+        {
+            for (k in (j:nv))
+            {
+                ct <- ct + 1
+
+                if (ct %% 2 == 0)
+                {
+                    sgn <- 1
+                } else
+                {
+                    sgn <- -1
+                }
+
+                xbeta <- xbeta + sgn * (xx[,j] * xx[,k] - 0.25 * (xx[,j] + xx[,k]))
+            }
+        }
+
+        E_y <- 10 * (trtt + 1) * xbeta / var(xbeta)
+
+        E_y
+    }
+
+    n <- NROW(x)
+
+    y <- E_y_given_x_trt(x, trt) + rnorm(n, sd = sd.error)
+
+    individual_trt_eff <- E_y_given_x_trt(x, 1) - E_y_given_x_trt(x, 0)
 
     trt_eff_sample <- mean(individual_trt_eff)
 
