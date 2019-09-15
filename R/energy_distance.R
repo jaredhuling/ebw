@@ -28,6 +28,42 @@
 #' \item{energy_dist_optimized}{The weighted energy distance using the optimal energy balancing weights}
 #' \item{opt}{The optimization object returned by \code{solvecop()}}
 #'
+#' @examples
+#'
+#' n <- 100
+#' p <- 10
+#'
+#' set.seed(1)
+#'
+#' dat <- sim_confounded_data(n.obs = n, n.vars = p, AR.cor = 0.5,
+#'                            propensity.model = "I", y.model = "A")
+#'
+#' x   <- dat$x
+#' y   <- dat$y
+#' trt <- dat$trt
+#'
+#' ebal <- energy_balance(trt, x, verbose = TRUE)
+#'
+#' # raw energy
+#' ebal$energy_dist_unweighted
+#' ebal$energy_dist_optimized
+#'
+#' # distribution of response:
+#' quantile(y)
+#'
+#' # true trt effect:
+#' dat$trt_eff
+#'
+#' # naive estimate of trt effect:
+#' ipw_est(y, trt, rep(1, length(trt)))
+#'
+#' # estimated trt effect:
+#' ipw_est(y, trt, ebal$weights)
+#'
+#' # estimated trt effect with true propensity:
+#' wts_true <- 1 / (trt * dat$prob.trt + (1 - trt) * (1 - dat$prob.trt))
+#' ipw_est(y, trt, wts_true)
+#'
 #' @export
 energy_balance <- function(trt,
                            x,
@@ -294,6 +330,8 @@ energy_balance <- function(trt,
                 opt                    = res
                 )
     class(ret) <- c("energy_balancing_weights")
+
+    ret
 }
 
 
