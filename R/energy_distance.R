@@ -69,6 +69,7 @@ energy_balance <- function(trt,
                            x,
                            method      = c("ATE.3", "ATE", "ATT", "overlap"),
                            standardize = TRUE,
+                           lambda      = 0,
                            verbose     = FALSE,
                            max.constr  = FALSE)
 {
@@ -80,6 +81,9 @@ energy_balance <- function(trt,
         x.orig <- x
         x <- scale(x)
     }
+
+    lambda <- lambda[1]
+    stopifnot(lambda >= 0)
 
     trt <- as.factor(as.vector(trt))
 
@@ -152,6 +156,11 @@ energy_balance <- function(trt,
         }
 
 
+        if (lambda > 0)
+        {
+            QQ <- QQ + lambda * diag(ncol(QQ))
+        }
+
 
         rownames(QQ) <- paste(1:NROW(QQ))
 
@@ -162,20 +171,32 @@ energy_balance <- function(trt,
         rownames(AA) <- paste0("eq", 1:nrow(AA))
         sum.constr   <- n.vec
 
-
         lc <- lincon(A   = AA,
                      dir = rep("==", length(sum.constr)),
                      val = sum.constr,
                      id  = rownames(QQ)) #linear constraint
 
 
-        if (constr.sum)
+        if (TRUE) # (lambda == 0)
         {
-            ub <- ubcon(10 * nn ^ (1/3), id = rownames(QQ))
-            lcqp <- cop( f = qf, lb = lb, lc = lc, ub = ub)
+            if (constr.sum)
+            {
+                ub <- ubcon(10 * nn ^ (1/3), id = rownames(QQ))
+                lcqp <- cop( f = qf, lb = lb, lc = lc, ub = ub)
+            } else
+            {
+                lcqp <- cop( f = qf, lb = lb, lc = lc)
+            }
         } else
         {
-            lcqp <- cop( f = qf, lb = lb, lc = lc)
+            if (constr.sum)
+            {
+                ub <- ubcon(10 * nn ^ (1/3), id = rownames(QQ))
+                lcqp <- cop( f = qf, lb = lb, ub = ub)
+            } else
+            {
+                lcqp <- cop( f = qf, lb = lb)
+            }
         }
 
         res <- solvecop(lcqp, solver = solver, quiet = !verbose)
@@ -232,6 +253,11 @@ energy_balance <- function(trt,
 
         rownames(QQ) <- paste(1:NROW(QQ))
 
+        if (lambda > 0)
+        {
+            QQ <- QQ + lambda * diag(ncol(QQ))
+        }
+
         qf <- quadfun(Q = QQ, a = aa, id = rownames(QQ)) #quadratic obj.
         lb <- lbcon(0, id = rownames(QQ)) #lower bound
 
@@ -242,13 +268,26 @@ energy_balance <- function(trt,
                      id  = rownames(QQ)) #linear constraint
 
 
-        if (constr.sum)
+        if (TRUE) # (lambda == 0)
         {
-            ub <- ubcon(10 * nn ^ (1/3), id = rownames(QQ))
-            lcqp <- cop( f = qf, lb = lb, lc = lc, ub = ub)
+            if (constr.sum)
+            {
+                ub <- ubcon(10 * nn ^ (1/3), id = rownames(QQ))
+                lcqp <- cop( f = qf, lb = lb, lc = lc, ub = ub)
+            } else
+            {
+                lcqp <- cop( f = qf, lb = lb, lc = lc)
+            }
         } else
         {
-            lcqp <- cop( f = qf, lb = lb, lc = lc)
+            if (constr.sum)
+            {
+                ub <- ubcon(10 * nn ^ (1/3), id = rownames(QQ))
+                lcqp <- cop( f = qf, lb = lb, ub = ub)
+            } else
+            {
+                lcqp <- cop( f = qf, lb = lb)
+            }
         }
 
         res <- solvecop(lcqp, solver = solver, quiet = !verbose)
@@ -280,6 +319,11 @@ energy_balance <- function(trt,
         QQ_both <- (trt_ind) * t( (1 - trt_ind) * t(QQ_all)) / (n.vec[1] * n.vec[2])
 
         QQ <- 2 * QQ_both - (QQ1 + QQ0)
+
+        if (lambda > 0)
+        {
+            QQ <- QQ + lambda * diag(ncol(QQ))
+        }
 
         AA <- matrix(1, nrow = 1, ncol = nn)
         rownames(AA) <- "eq"

@@ -5,7 +5,8 @@
 \title{Construction of energy balancing weights}
 \usage{
 energy_balance(trt, x, method = c("ATE.3", "ATE", "ATT", "overlap"),
-  standardize = TRUE, verbose = FALSE, max.constr = FALSE)
+  standardize = TRUE, lambda = 0, verbose = FALSE,
+  max.constr = FALSE)
 }
 \arguments{
 \item{trt}{vector indicating treatment assignment. Can be a factor or a vector of integers, with each
