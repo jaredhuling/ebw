@@ -5,8 +5,8 @@
 \title{Simulation of confounded data}
 \usage{
 sim_confounded_data(n.obs, n.vars = 10, n.obs.test = 10000,
-  AR.cor = 0, propensity.model = c("I", "II", "III", "IV"),
-  y.model = c("A", "B", "C", "D", "E"))
+  AR.cor = 0, propensity.model = c("I", "II", "III", "IV", "V", "VI"),
+  y.model = c("A", "B", "C", "D", "E", "F"), transform.x = FALSE)
 }
 \arguments{
 \item{n.obs}{number of observations}
@@ -37,5 +37,22 @@ dat <- sim_confounded_data(n.obs = n, n.vars = p, AR.cor = 0.5,
 x   <- dat$x
 y   <- dat$y
 trt <- dat$trt
+
+ncols <- 10
+Cols <- rbPal(ncols)[as.numeric(cut(dat$prob.trt.test,breaks = ncols))]
+plot(dat$x[,1:2], pch=19,cex=1,col=Cols,lwd=2,xlab="",ylab="",
+     main = "propensity score vs X1 and X2")
+legend("topleft",title="Decile",legend=levels(cut(dat$prob.trt.test,breaks = ncols)),col = rbPal(ncols),pch=19)
+
+plot(dat$x[,2:3], pch=19,cex=1,col=Cols,lwd=2,xlab="",ylab="",
+main = "propensity score vs X1 and X2")
+
+plot(dat$x[,3:4], pch=19,cex=1,col=Cols,lwd=2,xlab="",ylab="",
+main = "propensity score vs X1 and X2")
+legend("bottomright",title="Decile",legend=levels(cut(dat$prob.trt.test,breaks = ncols)),col = rbPal(ncols),pch=19)
+
+plot(dat$x[,4:1], pch=19,cex=1,col=Cols,lwd=2,xlab="",ylab="",
+main = "propensity score vs X1 and X2")
+legend("bottomright",title="Decile",legend=levels(cut(dat$prob.trt.test,breaks = ncols)),col = rbPal(ncols),pch=19)
 
 }

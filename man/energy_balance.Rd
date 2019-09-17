@@ -21,6 +21,8 @@ ATE where the energy distance criterion to be optimized involves all pairwise en
 method is generally better than \code{"ATE"}, which also estimates the ATE, but only involves energy distances
 bbetween each treatment group and the full sample. \code{"ATT"} estimates weights for estimating the ATT}
 
+\item{lambda}{tuning parameter for the penalty on the sum of squares of the weights}
+
 \item{verbose}{should we print out intermediate results of optimization process? \code{TRUE} or \code{FALSE}}
 
 \item{max.constr}{should each weight be constrained to be less than \code{10 * nrow(x) ^ (1/3)}? Defaults to \code{FALSE}.
@@ -47,28 +49,29 @@ Constructs energy balancing weights for estimation of average treatment effects
 \examples{
 
 n <- 100
-p <- 10
+p <- 5
 
 set.seed(1)
 
-dat <- sim_confounded_data(n.obs = n, n.vars = p, AR.cor = 0.5,
-                           propensity.model = "I", y.model = "A")
+dat <- sim_confounded_data(n.obs = n, n.vars = p, AR.cor = 0.75,
+                           propensity.model = "VI", y.model = "D")
 
 x   <- dat$x
 y   <- dat$y
 trt <- dat$trt
 
-ebal <- energy_balance(trt, x, verbose = TRUE)
+ebal <- energy_balance(trt, x)
 
 # raw energy
 ebal$energy_dist_unweighted
+# optimal weighted energy
 ebal$energy_dist_optimized
 
 # distribution of response:
 quantile(y)
 
 # true trt effect:
-dat$trt_eff
+dat$trt.eff
 
 # naive estimate of trt effect:
 ipw_est(y, trt, rep(1, length(trt)))
