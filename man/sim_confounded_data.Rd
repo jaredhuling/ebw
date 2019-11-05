@@ -5,8 +5,9 @@
 \title{Simulation of confounded data}
 \usage{
 sim_confounded_data(n.obs, n.vars = 10, n.obs.test = 10000,
-  AR.cor = 0, propensity.model = c("I", "II", "III", "IV", "V", "VI"),
-  y.model = c("A", "B", "C", "D", "E", "F"), transform.x = FALSE)
+  AR.cor = 0, propensity.model = c("I", "II", "III", "IV", "V", "VI",
+  "VII"), y.model = c("A", "B", "C", "D", "E", "F"),
+  transform.x = FALSE)
 }
 \arguments{
 \item{n.obs}{number of observations}
