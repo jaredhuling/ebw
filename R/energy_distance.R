@@ -87,7 +87,12 @@ energy_balance <- function(trt,
     lambda <- lambda[1]
     stopifnot(lambda >= 0)
 
-    trt <- as.factor(as.vector(trt))
+    #trt <- as.factor(as.vector(trt))
+
+    if (!is.factor(trt))
+    {
+        trt <- as.factor(trt)
+    }
 
     trt.levels <- levels(trt)
     K          <- length(trt.levels)
@@ -144,19 +149,18 @@ energy_balance <- function(trt,
         {
             if (k == 1)
             {
-                trt_ind <- 1 * (trt == trt.levels[k])
+                trt_ind <- drop(1 * (trt == trt.levels[k]))
                 QQ <- -trt_ind * t( trt_ind * t(QQ_all)) / n.vec[k] ^ 2
 
                 aa <- 2 * as.vector(rowSums(trt_ind * QQ_all)) / (n.vec[k] * nn)
             } else
             {
-                trt_ind <- 1 * (trt == trt.levels[k])
+                trt_ind <- drop(1 * (trt == trt.levels[k]))
                 QQ <- QQ - trt_ind * t( trt_ind * t(QQ_all)) / n.vec[k] ^ 2
 
                 aa <- aa + 2 * as.vector(rowSums(trt_ind * QQ_all)) / (n.vec[k] * nn)
             }
         }
-
 
         if (lambda > 0)
         {
@@ -222,13 +226,13 @@ energy_balance <- function(trt,
         {
             if (k == 1)
             {
-                trt_ind <- 1 * (trt == trt.levels[k])
+                trt_ind <- drop(1 * (trt == trt.levels[k]))
                 QQ <- -trt_ind * t( trt_ind * t(QQ_all)) / n.vec[k] ^ 2
 
                 aa <- 2 * as.vector(rowSums(trt_ind * QQ_all)) / (n.vec[k] * nn)
             } else
             {
-                trt_ind <- 1 * (trt == trt.levels[k])
+                trt_ind <- drop(1 * (trt == trt.levels[k]))
                 QQ <- QQ - trt_ind * t( trt_ind * t(QQ_all)) / n.vec[k] ^ 2
 
                 aa <- aa + 2 * as.vector(rowSums(trt_ind * QQ_all)) / (n.vec[k] * nn)
@@ -945,7 +949,9 @@ energy.dist.twoway.trt <- function(wts, x, trt, gamma = -1, normalize.wts = FALS
 
 
     # between sample energy statistic (6.7 of http://www.ericbunch.org/static/Szekely_estats.pdf)
-    e.dist.0 * ((n.x0 * n) / (2 * N)) + e.dist.1 * ((n.x1 * n) / (2 * N)) ## + e.dist.01 * ((n.x0 * n.x1) / (2 * N))
+    #e.dist.0 * ((n.x0 * n) / (2 * N)) + e.dist.1 * ((n.x1 * n) / (2 * N)) ## + e.dist.01 * ((n.x0 * n.x1) / (2 * N))
+
+    sqrt(n) * (e.dist.0 + e.dist.1)
 }
 
 
@@ -1042,6 +1048,7 @@ energy.dist.threeway.trt <- function(wts, x, trt, gamma = -1, normalize.wts = FA
 
 
     # between sample energy statistic (6.7 of http://www.ericbunch.org/static/Szekely_estats.pdf)
-    e.dist.0 * ((n.x0 * n) / (2 * N)) + e.dist.01 * ((n.x0 * n.x1) / (2 * N)) + e.dist.1 * ((n.x1 * n) / (2 * N))
+    #e.dist.0 * ((n.x0 * n) / (2 * N)) + e.dist.01 * ((n.x0 * n.x1) / (2 * N)) + e.dist.1 * ((n.x1 * n) / (2 * N))
+    sqrt(n) * (e.dist.0 + e.dist.1 + e.dist.01)
 }
 
