@@ -28,6 +28,7 @@
 #' \item{energy_dist_unweighted}{The energy distance of the raw data (ie with all weights = 1)}
 #' \item{energy_dist_optimized}{The weighted energy distance using the optimal energy balancing weights}
 #' \item{opt}{The optimization object returned by \code{solvecop()}}
+#' \seealso \code{\link[ebw]{print.energy_balancing_weights}} for printing of fitted energy balancing objects
 #'
 #' @examples
 #'

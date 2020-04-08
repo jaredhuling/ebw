@@ -7,8 +7,8 @@
 #' @param x a fitted object from \code{\link[ebw]{energy_balance}}
 #' @param digits minimal number of significant digits to print.
 #' @param ... further arguments passed to or from \code{\link[base]{print.default}}.
-#' @seealso \code{\link[ebw]{energy_balance}} for function which produces energy balancing weights
 #' @rdname print
+#' @seealso \code{\link[ebw]{energy_balance}} for function which produces energy balancing weights
 #' @importFrom stats quantile
 #' @export
 print.energy_balancing_weights <- function(x, digits = max(getOption('digits')-3, 3), ...)
