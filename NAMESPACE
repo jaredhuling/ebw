@@ -2,6 +2,7 @@
 
 S3method(print,energy_balancing_weights)
 export(energy_balance)
+export(energy_balance_2)
 export(ipw_est)
 export(sim_confounded_data)
 export(weighted_energy_distance)

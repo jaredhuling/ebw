@@ -4,8 +4,7 @@
 \alias{print.energy_balancing_weights}
 \title{Printing results for estimated energy balancing weights}
 \usage{
-\method{print}{energy_balancing_weights}(x,
-  digits = max(getOption("digits") - 3, 3), ...)
+\method{print}{energy_balancing_weights}(x, digits = max(getOption("digits") - 3, 3), ...)
 }
 \arguments{
 \item{x}{a fitted object from \code{\link[ebw]{energy_balance}}}

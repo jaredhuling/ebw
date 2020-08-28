@@ -4,8 +4,13 @@
 \alias{weighted_energy_distance}
 \title{Calculation of weighted energy distance}
 \usage{
-weighted_energy_distance(weights = rep(1, NROW(x)), trt, x,
-  type = c("two_way", "three_way"), normalize.wts = TRUE)
+weighted_energy_distance(
+  weights = rep(1, NROW(x)),
+  trt,
+  x,
+  type = c("two_way", "three_way"),
+  normalize.wts = TRUE
+)
 }
 \arguments{
 \item{weights}{a vector of sample weights}

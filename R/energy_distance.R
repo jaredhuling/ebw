@@ -38,7 +38,7 @@
 #' set.seed(1)
 #'
 #' dat <- sim_confounded_data(n.obs = n, n.vars = p, AR.cor = 0.75,
-#'                            propensity.model = "VI", y.model = "D")
+#'                            propensity.model = "IV", y.model = "A")
 #'
 #' x   <- dat$x
 #' y   <- dat$y
@@ -46,10 +46,7 @@
 #'
 #' ebal <- energy_balance(trt, x)
 #'
-#' # raw energy
-#' ebal$energy_dist_unweighted
-#' # optimal weighted energy
-#' ebal$energy_dist_optimized
+#' print(ebal)
 #'
 #' # distribution of response:
 #' quantile(y)
