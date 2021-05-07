@@ -1,11 +1,14 @@
 Package: ebw
 Type: Package
-Title: What the Package Does (Title Case)
+Title: Energy Balancing Weights for Robust Confounding Control
 Version: 0.1.0
-Author: Who wrote it
-Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
+Authors@R: c(
+    person("Jared", "Huling",  role = c("aut", "cre"), email = "jaredhuling@gmail.com")
+    )
+Description: Provides routines for estimation of the Energy Balancing Weights, 
+    which are designed to facilitate unconfounded causal comparisons by rebalancing
+    the joint distributions of confounders from the treated groups to look like that
+    of the target population.
 License: GPL-3
 Depends:
     optiSolve,
@@ -13,4 +16,4 @@ Depends:
     MASS
 Encoding: UTF-8
 LazyData: true
-RoxygenNote: 7.1.0
+RoxygenNote: 7.1.1

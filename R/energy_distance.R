@@ -28,7 +28,7 @@
 #' \item{energy_dist_unweighted}{The energy distance of the raw data (ie with all weights = 1)}
 #' \item{energy_dist_optimized}{The weighted energy distance using the optimal energy balancing weights}
 #' \item{opt}{The optimization object returned by \code{solvecop()}}
-#' \seealso \code{\link[ebw]{print.energy_balancing_weights}} for printing of fitted energy balancing objects
+#' @seealso \code{\link[ebw]{print.energy_balancing_weights}} for printing of fitted energy balancing objects
 #'
 #' @examples
 #'
@@ -67,7 +67,7 @@
 #' @export
 energy_balance <- function(trt,
                            x,
-                           method      = c("ATE.3", "ATE", "ATT", "overlap"),
+                           method      = c("ATE.3", "ATE", "ATT"),
                            standardize = TRUE,
                            lambda      = 0,
                            verbose     = FALSE,
@@ -102,11 +102,6 @@ energy_balance <- function(trt,
     if (K > 2 & type == "ATT")
     {
         stop("type == 'ATT' cannot be used for treatments with multiple levels")
-    }
-
-    if (K > 2 & type == "overlap")
-    {
-        stop("type == 'overlap' cannot be used for treatments with multiple levels")
     }
 
     if (type == "ATT")
@@ -310,49 +305,6 @@ energy_balance <- function(trt,
         QQ <- -trt_ind * t( trt_ind * t(QQ_all)) / n.vec[1] ^ 2
 
         aa <- 2 * as.vector(rowSums(trt_ind * QQ_all)) / (n.vec[1] * nn)
-    } else if (type == "overlap")
-    {
-        ## these are the treated patients
-        trt_ind <- 1 * (trt == trt.levels[2])
-
-        QQ1 <- trt_ind * t( trt_ind * t(QQ_all)) / n.vec[2] ^ 2
-        QQ0 <- (1 - trt_ind) * t( (1 - trt_ind) * t(QQ_all)) / n.vec[1] ^ 2
-
-
-
-        QQ_both <- (trt_ind) * t( (1 - trt_ind) * t(QQ_all)) / (n.vec[1] * n.vec[2])
-
-        QQ <- 2 * QQ_both - (QQ1 + QQ0)
-
-        if (lambda > 0)
-        {
-            QQ <- QQ + lambda * diag(ncol(QQ)) / nn
-        }
-
-        AA <- matrix(1, nrow = 1, ncol = nn)
-        rownames(AA) <- "eq"
-        rownames(QQ) <- paste(1:NROW(QQ))
-
-
-        qf <- quadfun(Q = QQ, id = rownames(QQ)) #quadratic obj.
-        lb <- lbcon(0, id = rownames(QQ))
-        ub <- ubcon(1, id = rownames(QQ))
-
-
-        lcqp <- cop( f = qf, lb = lb, ub = ub)
-
-        res <- solvecop(lcqp, solver = solver, quiet = !verbose)
-
-        wts_quadopt <- unname(res$x)
-
-        #wts_quadopt[trt_ind == 1] <- 1
-
-
-        ### the overall objective function value
-        final_value <- weighted.energy.dist.trt2ctrl(unname(res$x), x, trt, gamma = -1)
-
-        ### the unweighted objective function value
-        unweighted_value <- weighted.energy.dist.trt2ctrl(rep(1, length(res$x)), x, trt, gamma = -1)
     }
 
 
@@ -362,9 +314,6 @@ energy_balance <- function(trt,
     } else if (type %in% c("ATT"))
     {
         estimand <- "ATT"
-    } else if (type == "overlap")
-    {
-        estimand <- "overlap"
     }
 
 
