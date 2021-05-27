@@ -37,7 +37,7 @@ ipw_est <- function(y, trt, weights)
 ecdf2d     <- function(obj, x, y) sum( obj[,1] < x & obj[,2] < y)/nrow(obj)
 ecdf2d.wtd <- function(obj, x, y, wts = rep(1, NROW(obj))) sum( wts * (obj[,1] < x & obj[,2] < y)  ) / sum(wts)
 
-
+## univariate (weighted) ECDF
 ecdf.wtd <- function(obj, x, wts = rep(1, NROW(obj)))
 {
     if (is.null(dim(obj)))
