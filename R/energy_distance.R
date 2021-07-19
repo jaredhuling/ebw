@@ -20,7 +20,7 @@
 #' @param max.constr should each weight be constrained to be less than \code{10 * nrow(x) ^ (1/3)}? Defaults to \code{FALSE}.
 #' This option is generally not needed.
 #' @return An object of class \code{"energy_balancing_weights"} with elements:
-#' \item{weights}{A vector of length \code{nrow(x)} containing the estimates sample weights }
+#' \item{weights}{A vector of length \code{nrow(x)} containing the estimated sample weights }
 #' \item{trt}{Treatment vector}
 #' \item{estimand}{The estimand requested}
 #' \item{method}{The method used}
