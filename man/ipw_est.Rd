@@ -2,7 +2,7 @@
 % Please edit documentation in R/utils.R
 \name{ipw_est}
 \alias{ipw_est}
-\title{Calculation of weighted energy distance}
+\title{Calculation of Hajek estimate of the average treatment effect}
 \usage{
 ipw_est(y, trt, weights)
 }
@@ -18,5 +18,5 @@ take the value 1 for treated and any other value to indicate not treated}
 an estimate of a causal contrast
 }
 \description{
-Calculates weighted energy distances between treatment groups and the full sample
+Calculates the Hajek weighted estimate of the average treatment effect
 }

@@ -1,7 +1,7 @@
 
-#' Calculation of weighted energy distance
+#' Calculation of Hajek estimate of the average treatment effect
 #'
-#' @description Calculates weighted energy distances between treatment groups and the full sample
+#' @description Calculates the Hajek weighted estimate of the average treatment effect
 #'
 #' @param y vector of responses
 #' @param trt vector indicating treatment assignment of length equal to the length of \code{y}. It should
