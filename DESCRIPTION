@@ -1,19 +1,30 @@
 Package: ebw
 Type: Package
-Title: Energy Balancing Weights for Robust Confounding Control
-Version: 0.1.0
+Title: Energy Balancing and Independence Weights for Binary and Continuous Treatments
+Version: 0.2.0
 Authors@R: c(
     person("Jared", "Huling",  role = c("aut", "cre"), email = "jaredhuling@gmail.com")
     )
-Description: Provides routines for estimation of the Energy Balancing Weights, 
-    which are designed to facilitate unconfounded causal comparisons by rebalancing
-    the joint distributions of confounders from the treated groups to look like that
-    of the target population.
+Description: Estimation of covariate balancing weights for causal inference with
+    either a binary treatment, through energy balancing weights, or a continuous
+    treatment, through independence weights. Both weightings solve a
+    simplex-constrained ridge quadratic program whose dual representation yields
+    a balancing function that extends to new covariate values, so a fitted
+    weighting can predict the weight a new unit would receive out of sample.
 License: GPL-3
-Depends:
-    optiSolve,
-    fields,
-    MASS
 Encoding: UTF-8
 LazyData: true
-RoxygenNote: 7.1.1
+Imports:
+    stats,
+    osqp,
+    ggplot2
+Suggests:
+    testthat,
+    cobalt,
+    WeightIt,
+    MASS,
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
+RoxygenNote: 7.3.3
+Roxygen: list(markdown = TRUE)

@@ -1,0 +1,129 @@
+---
+title: "Energy balancing and independence weights with ebw"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Energy balancing and independence weights with ebw}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 6,
+                      fig.height = 4)
+library(ebw)
+set.seed(20260809)
+```
+
+The **ebw** package fits covariate balancing weights for causal inference with
+either a binary treatment, through energy balancing weights, or a continuous
+treatment, through independence weights. A single function,
+`energy_balance()`, handles both. Every fit records the pieces of its dual
+representation, so the weight a new unit would receive can be predicted out of
+sample with `predict()`.
+
+## Binary treatment: energy balancing
+
+```{r binary-fit}
+dat <- sim_confounded_data(n.obs = 300, n.vars = 6, AR.cor = 0.3)
+fit_b <- energy_balance(x = dat$x, treatment = dat$trt, estimand = "ATE")
+fit_b
+```
+
+The fitted weights are returned by `weights()` as a plain numeric vector, which
+slots directly into downstream balance tools.
+
+```{r binary-weights}
+w <- weights(fit_b)
+str(w)
+```
+
+### Out-of-sample prediction
+
+The fit records the quantities that define the weight as an explicit function of
+the covariates: the fitted weights, the kernel evaluations of a covariate value
+against the training units, the fixed centering constants, the threshold
+multiplier, and the ridge parameter. Evaluating that function at a new covariate
+value gives the weight a genuinely new unit would receive, so `predict()` returns
+out-of-sample weights without refitting.
+
+```{r binary-predict}
+new <- sim_confounded_data(n.obs = 50, n.vars = 6, AR.cor = 0.3)
+w_new <- predict(fit_b, newdata = new$x)
+summary(w_new)
+```
+
+### Balance diagnostics
+
+`balance()` reports per-covariate standardized mean differences before and after
+weighting, the energy distance to the target, and the effective sample size. It
+works both on the training sample and, with `newdata`, out of sample.
+
+```{r binary-balance}
+balance(fit_b)
+balance(fit_b, newdata = list(x = new$x, trt = new$trt))
+```
+
+A Love plot and a plot of the weight distribution are available through
+`plot()`.
+
+```{r binary-plot, fig.alt = "Love plot of covariate balance"}
+plot(fit_b, type = "balance")
+plot(fit_b, type = "weights")
+```
+
+### Interoperability with cobalt
+
+Because `weights()` returns a plain numeric vector, the fitted weights pass
+directly to `cobalt::bal.tab()`.
+
+```{r cobalt, eval = requireNamespace("cobalt", quietly = TRUE)}
+cobalt::bal.tab(dat$x, treat = dat$trt, weights = weights(fit_b))
+```
+
+## Continuous treatment: independence weights
+
+For a continuous treatment, `independence_weights()` fits weights that drive the
+weighted joint distribution of covariates and treatment toward independence.
+
+```{r cont-fit}
+cdat <- sim_continuous_data(n.obs = 300, n.vars = 4, alpha.norm2 = 0.5)
+fit_c <- independence_weights(A = cdat$a, X = cdat$x)
+fit_c
+```
+
+Prediction is again out of sample, but the balancing function now depends on
+both the covariates and the treatment value, so both are required.
+
+```{r cont-predict}
+cnew <- sim_continuous_data(n.obs = 50, n.vars = 4, alpha.norm2 = 0.5)
+w_cnew <- predict(fit_c, newdata = list(x = cnew$x, a = cnew$a))
+summary(w_cnew)
+```
+
+The continuous balance report gives per-covariate distance correlations with the
+treatment, the overall distance covariance, and the weighted versus unweighted
+marginal means.
+
+```{r cont-balance}
+balance(fit_c)
+```
+
+### Moment constraints
+
+Two optional moment constraints refine the continuous fit. `preserve_means`
+forces the weighted mean of every covariate and of the treatment to equal the
+unweighted sample mean, and `decorrelate_moments` forces the weighted
+treatment-covariate covariances to zero. Both are solved with `osqp`, and the
+out-of-sample predictor gains a dual term that is linear in the constraint
+features, so prediction stays out of sample.
+
+```{r cont-constrained}
+fit_pm <- independence_weights(A = cdat$a, X = cdat$x, preserve_means = TRUE)
+w_pm <- weights(fit_pm)
+
+# the weighted covariate means now match the unweighted means
+round(max(abs(colSums(w_pm * cdat$x) / sum(w_pm) - colMeans(cdat$x))), 12)
+
+# and prediction remains available out of sample
+head(predict(fit_pm, newdata = list(x = cnew$x, a = cnew$a)))
+```

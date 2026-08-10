@@ -1,0 +1,92 @@
+# S3 methods for the "ebw" class.
+
+#' Extract fitted balancing weights
+#'
+#' Returns a plain numeric vector of the fitted weights, one per training unit,
+#' suitable for passing directly to downstream balance tools such as
+#' `cobalt::bal.tab()` or `WeightIt`.
+#'
+#' @param object a fitted `"ebw"` object.
+#' @param ... unused.
+#'
+#' @return The numeric vector of fitted weights.
+#'
+#' @examples
+#' set.seed(20260809)
+#' dat <- sim_confounded_data(n.obs = 200, n.vars = 6)
+#' fit <- energy_balance(x = dat$x, treatment = dat$trt)
+#' w <- weights(fit)
+#' \dontrun{
+#' # the weights slot in directly to cobalt's balance table
+#' if (requireNamespace("cobalt", quietly = TRUE))
+#'   cobalt::bal.tab(dat$x, treat = dat$trt, weights = weights(fit))
+#' }
+#'
+#' @export
+weights.ebw <- function(object, ...) {
+  object$weights
+}
+
+#' Print a fitted energy-balancing object
+#'
+#' @param x a fitted `"ebw"` object.
+#' @param ... unused.
+#'
+#' @return `x`, invisibly.
+#'
+#' @export
+print.ebw <- function(x, ...) {
+  cat("Energy balancing / independence weights (class 'ebw')\n")
+  cat("  treatment type:", x$treatment_type, "\n")
+  if (identical(x$treatment_type, "binary"))
+    cat("  estimand:      ", x$estimand, "\n")
+  cat("  kernel:        ", x$kernel, "\n")
+  cat("  scaling:       ", x$scaling$method, "\n")
+  cat("  n:             ", x$n, "\n")
+  w <- x$weights
+  ess <- sum(w)^2 / sum(w^2)
+  cat(sprintf("  ESS:            %.1f  (%.1f%% of n)\n", ess, 100 * ess / x$n))
+  cat(sprintf("  weight range:   [%.4g, %.4g]\n", min(w), max(w)))
+  invisible(x)
+}
+
+#' Summarize a fitted energy-balancing object
+#'
+#' @param object a fitted `"ebw"` object.
+#' @param ... unused.
+#'
+#' @return A list of class `"summary.ebw"` with the sample size, treatment
+#'   type, estimand, effective sample size, and weight range.
+#'
+#' @export
+summary.ebw <- function(object, ...) {
+  w <- object$weights
+  ess <- sum(w)^2 / sum(w^2)
+  out <- list(
+    n = object$n,
+    treatment_type = object$treatment_type,
+    estimand = object$estimand,
+    kernel = object$kernel,
+    ess = ess,
+    weight_range = range(w)
+  )
+  class(out) <- "summary.ebw"
+  out
+}
+
+#' @rdname summary.ebw
+#' @param x a `"summary.ebw"` object.
+#' @export
+print.summary.ebw <- function(x, ...) {
+  cat("Summary of energy balancing / independence weights\n")
+  cat("  n:             ", x$n, "\n")
+  cat("  treatment type:", x$treatment_type, "\n")
+  if (identical(x$treatment_type, "binary"))
+    cat("  estimand:      ", x$estimand, "\n")
+  cat("  kernel:        ", x$kernel, "\n")
+  cat(sprintf("  ESS:            %.1f  (%.1f%% of n)\n",
+              x$ess, 100 * x$ess / x$n))
+  cat(sprintf("  weight range:   [%.4g, %.4g]\n",
+              x$weight_range[1], x$weight_range[2]))
+  invisible(x)
+}
