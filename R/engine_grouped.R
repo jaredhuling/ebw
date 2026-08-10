@@ -27,18 +27,25 @@
 #'   (the improved variant).
 #' @param eps ridge parameter.
 #' @param kernel covariate kernel function.
+#' @param preserve_means logical; add per-group equality constraints forcing the
+#'   weighted mean of every covariate within each group to equal the pooled
+#'   (full-sample) mean, so each group's weighted covariate means match the
+#'   pooled means exactly. The constrained program is solved with `osqp` and the
+#'   out-of-sample predictor gains a tilt linear in the constraint covariates.
 #' @param max_iter,tol FISTA controls.
 #'
 #' @return A list carrying the fitted length-n weights `w` and the
-#'   dual-representation ingredients needed by the predictor.
+#'   dual-representation ingredients needed by the predictor. When
+#'   `preserve_means = TRUE` it also carries the moment-constraint duals `zeta`
+#'   and the constraint specification `feat`, together with a `constrained` flag.
 #'
 #' @keywords internal
 #' @noRd
 .ebw_grouped <- function(X, groups, alpha = NULL, beta = NULL, eps = 1e-2,
-                         kernel = energy_kernel_X,
+                         kernel = energy_kernel_X, preserve_means = FALSE,
                          max_iter = 30000L, tol = 1e-12) {
   X <- as.matrix(X)
-  n <- nrow(X)
+  n <- nrow(X); p <- ncol(X)
   groups <- as.integer(groups)
   K <- max(groups)
   if (is.null(alpha)) alpha <- rep(1, K)
@@ -79,6 +86,53 @@
     w
   }
 
+  # ---- constrained path (osqp): per-group mean preservation ----------------
+  # Adds, for each group k and covariate d, the equality
+  #   sum_{i in k} w_i X_id = Xbar_d   (pooled mean),
+  # to the per-group simplex program. Because each group's weights sum to one,
+  # the group's weighted covariate mean then equals the pooled mean exactly. The
+  # moment-constraint duals zeta_{k,d} enter the out-of-sample predictor as a
+  # tilt varpi_k(x) = sum_d zeta_{k,d} x_d added to the balancing threshold.
+  if (isTRUE(preserve_means)) {
+    if (!requireNamespace("osqp", quietly = TRUE))
+      stop("`preserve_means` for a binary or multi-category treatment requires ",
+           "the 'osqp' package. Install it with install.packages('osqp').",
+           call. = FALSE)
+
+    # osqp needs the explicit quadratic P (Hessian) and linear term q. The grad
+    # is affine, so q = grad at 0 and P[, j] = grad(e_j) - q. Building P from
+    # grad_fn keeps alpha / beta baked in, so this covers both the standard
+    # (beta = 0) and improved (beta > 0) grouped objectives.
+    q0 <- grad_fn(numeric(n))
+    P <- matrix(0, n, n); e <- numeric(n)
+    for (j in seq_len(n)) { e[j] <- 1; P[, j] <- grad_fn(e) - q0; e[j] <- 0 }
+    P <- (P + t(P)) / 2
+
+    # per-group sum-to-one rows, then per-group mean-preservation rows
+    Amat <- matrix(0, K, n); for (k in seq_len(K)) Amat[k, idxs[[k]]] <- 1
+    lo <- rep(1, K); up <- rep(1, K)
+    feat <- list()
+    xbar <- colMeans(X)
+    for (k in seq_len(K)) for (d in seq_len(p)) {
+      row <- numeric(n); row[idxs[[k]]] <- X[idxs[[k]], d]
+      Amat <- rbind(Amat, row); lo <- c(lo, xbar[d]); up <- c(up, xbar[d])
+      feat[[length(feat) + 1L]] <- list(k = k, d = d)
+    }
+    Amat <- rbind(Amat, diag(n)); lo <- c(lo, rep(0, n)); up <- c(up, rep(Inf, n))
+
+    sol <- osqp::solve_osqp(P, q = q0, A = Amat, l = lo, u = up,
+                            pars = osqp::osqpSettings(max_iter = 2e5L,
+                                                      eps_abs = 1e-9, eps_rel = 1e-9,
+                                                      verbose = FALSE))
+    w <- pmax(sol$x, 0); y <- sol$y
+    nu <- -y[seq_len(K)]                       # per-group sum duals
+    zeta <- -y[(K + 1L):(K + length(feat))]    # moment-constraint duals
+
+    return(list(kind = "grouped", X = X, groups = groups, w = w, eps = eps,
+                alpha = alpha, beta = beta, nu = nu, n = n, K = K, idxs = idxs,
+                kernel = kernel, constrained = TRUE, zeta = zeta, feat = feat))
+  }
+
   # step size via power iteration on the Hessian action (grad is affine)
   g0 <- grad_fn(numeric(n))                  # gradient at 0 = linear part
   Hmv <- function(v) grad_fn(v) - g0         # Hessian * v
@@ -111,7 +165,7 @@
 
   list(kind = "grouped", X = X, groups = groups, w = w, eps = eps,
        alpha = alpha, beta = beta, nu = nu, n = n, K = K, idxs = idxs,
-       kernel = kernel)
+       kernel = kernel, constrained = FALSE, zeta = numeric(0), feat = list())
 }
 
 #' Predict grouped EBW weights out of sample
@@ -150,6 +204,17 @@
   }
   if (identical(type, "balancing")) return(h)
   out <- numeric(m)
-  for (i in seq_len(m)) out[i] <- max(0, (fit$nu[gnew[i]] - 2 * h[i]) / (2 * fit$eps))
+  for (i in seq_len(m)) {
+    k <- gnew[i]
+    # augmented dual: tilt varpi_k(x) = sum_d zeta_{k,d} x_d, zero for an
+    # unconstrained fit (feat empty). Only the constraints for this unit's
+    # group k contribute.
+    tilt <- 0
+    if (isTRUE(fit$constrained) && length(fit$zeta))
+      for (mm in seq_along(fit$feat))
+        if (fit$feat[[mm]]$k == k)
+          tilt <- tilt + fit$zeta[mm] * Xnew[i, fit$feat[[mm]]$d]
+    out[i] <- max(0, (fit$nu[k] + tilt - 2 * h[i]) / (2 * fit$eps))
+  }
   out
 }

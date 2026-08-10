@@ -52,14 +52,19 @@
 #'   defaults to `sqrt(n)` when `NULL`.
 #' @param dimension_adj logical; use dimension-adjusted marginal-preservation
 #'   weights for the continuous engine (default `TRUE`).
-#' @param preserve_means logical (continuous treatment only); add equality
-#'   constraints forcing the weighted mean of every covariate and of the
-#'   treatment to equal the unweighted sample mean. The constrained QP is solved
-#'   with `osqp` and the out-of-sample predictor gains a dual term linear in the
+#' @param preserve_means logical; add equality constraints forcing weighted
+#'   covariate means to match their targets, applied uniformly across all
+#'   treatment types. For a continuous treatment it preserves the weighted mean
+#'   of every covariate and of the treatment at the unweighted sample mean; for
+#'   a binary or multi-category treatment it forces each group's weighted
+#'   covariate means to equal the pooled (full-sample) means, so the groups are
+#'   mean-balanced exactly. In every case the constrained QP is solved with
+#'   `osqp` and the out-of-sample predictor gains a dual term linear in the
 #'   constraint features.
 #' @param decorrelate_moments logical (continuous treatment only); add equality
 #'   constraints forcing the weighted treatment-covariate covariances to zero.
-#'   Also solved with `osqp`.
+#'   Also solved with `osqp`. Has no binary or multi-category analogue, so a
+#'   discrete treatment with `decorrelate_moments = TRUE` is an error.
 #' @param level optional value of `treatment` identifying the treated group for
 #'   a binary treatment; defaults to the larger / second level.
 #' @param max_iter,tol FISTA controls.
@@ -166,6 +171,17 @@ energy_balance <- function(formula, data,
   if (improved && treatment_type == "continuous")
     stop("`improved = TRUE` is only available for a binary or multi-category ",
          "treatment, not a continuous one.")
+  # decorrelate_moments has no discrete analogue: it forces weighted
+  # treatment-covariate covariances to zero, which is meaningful only when the
+  # treatment is continuous.
+  if (isTRUE(decorrelate_moments) && treatment_type != "continuous")
+    stop("`decorrelate_moments` is only defined for a continuous treatment; ",
+         "it has no binary or multi-category analogue.", call. = FALSE)
+  if (isTRUE(preserve_means) && treatment_type != "continuous" &&
+      identical(estimand, "ATT"))
+    stop("`preserve_means` for a discrete treatment balances each group to the ",
+         "pooled sample (the ATE); it is not available with estimand = \"ATT\".",
+         call. = FALSE)
 
   # ---- scale covariates (store for predict) --------------------------------
   sc <- .scale_covariates(X, method = scaling)
@@ -196,7 +212,7 @@ energy_balance <- function(formula, data,
                              max_iter = max_iter, tol = tol)
     engine <- list(kind = "continuous", fit = fit_c)
     weights <- fit_c$w
-  } else if (treatment_type == "binary" && !improved) {
+  } else if (treatment_type == "binary" && !improved && !isTRUE(preserve_means)) {
     # Standard binary energy balancing: unchanged from the original path so the
     # fitted weights match earlier releases exactly.
     engine <- .fit_binary(Xs, treatment, estimand = estimand, level = level,
@@ -206,7 +222,9 @@ energy_balance <- function(formula, data,
     n_groups <- 2L
     weights <- engine$weights
   } else {
-    # Improved binary or multi-category: unified grouped engine.
+    # Grouped engine: improved binary, multi-category, or any discrete fit with
+    # mean-preservation constraints (standard binary preserve_means routes here
+    # too, so the constraint acts uniformly across treatment types).
     if (treatment_type == "multinomial" && identical(estimand, "ATT"))
       stop("Only estimand = \"ATE\" is supported for a multi-category treatment.")
     levs <- sort(unique(treatment))
@@ -215,6 +233,7 @@ energy_balance <- function(formula, data,
     beta <- if (improved) { m <- matrix(1, K, K); diag(m) <- 0; m } else matrix(0, K, K)
     engine <- .ebw_grouped(Xs, groups, alpha = rep(1, K), beta = beta,
                            eps = eps, kernel = kern_X,
+                           preserve_means = isTRUE(preserve_means),
                            max_iter = max(max_iter, 30000L), tol = min(tol, 1e-12))
     treatment_levels <- levs
     n_groups <- K

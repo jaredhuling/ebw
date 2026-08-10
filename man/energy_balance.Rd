@@ -62,15 +62,20 @@ defaults to \code{sqrt(n)} when \code{NULL}.}
 \item{dimension_adj}{logical; use dimension-adjusted marginal-preservation
 weights for the continuous engine (default \code{TRUE}).}
 
-\item{preserve_means}{logical (continuous treatment only); add equality
-constraints forcing the weighted mean of every covariate and of the
-treatment to equal the unweighted sample mean. The constrained QP is solved
-with \code{osqp} and the out-of-sample predictor gains a dual term linear in the
+\item{preserve_means}{logical; add equality constraints forcing weighted
+covariate means to match their targets, applied uniformly across all
+treatment types. For a continuous treatment it preserves the weighted mean
+of every covariate and of the treatment at the unweighted sample mean; for
+a binary or multi-category treatment it forces each group's weighted
+covariate means to equal the pooled (full-sample) means, so the groups are
+mean-balanced exactly. In every case the constrained QP is solved with
+\code{osqp} and the out-of-sample predictor gains a dual term linear in the
 constraint features.}
 
 \item{decorrelate_moments}{logical (continuous treatment only); add equality
 constraints forcing the weighted treatment-covariate covariances to zero.
-Also solved with \code{osqp}.}
+Also solved with \code{osqp}. Has no binary or multi-category analogue, so a
+discrete treatment with \code{decorrelate_moments = TRUE} is an error.}
 
 \item{level}{optional value of \code{treatment} identifying the treated group for
 a binary treatment; defaults to the larger / second level.}
