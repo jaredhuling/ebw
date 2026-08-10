@@ -96,14 +96,27 @@ fit_improved <- energy_balance(x = X, treatment = a, improved = TRUE)
 ### A multi-category treatment
 
 A treatment that is a factor, or that takes a small number of distinct values, is
-balanced group by group to the pooled sample.
+balanced group by group to the pooled sample. Here the three groups are assigned
+in a way that depends on the covariates, so that the groups differ before
+weighting and there is imbalance to remove.
 
 ```{r multi}
 dat <- as.data.frame(X)
-dat$A <- factor(sample(c("low", "medium", "high"), n, replace = TRUE))
+lp <- drop(X %*% c(1, -1, 0, 0, 0))
+prob <- exp(cbind(-lp, 0, lp)); prob <- prob / rowSums(prob)
+dat$A <- factor(
+  c("low", "medium", "high")[apply(prob, 1, function(pr) sample(1:3, 1, prob = pr))],
+  levels = c("low", "medium", "high"))
 
 fit_multi <- energy_balance(A ~ ., data = dat)
-fit_multi
+```
+
+`balance()` reports the energy distance of each group to the pooled sample, which
+the weights reduce substantially, along with the standardized mean differences and
+the between-group energy distances.
+
+```{r multi-balance}
+balance(fit_multi)
 ```
 
 ### A continuous treatment

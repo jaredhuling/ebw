@@ -98,24 +98,62 @@ fit_improved <- energy_balance(x = X, treatment = a, improved = TRUE)
 ### A multi-category treatment
 
 A treatment that is a factor, or that takes a small number of distinct
-values, is balanced group by group to the pooled sample.
+values, is balanced group by group to the pooled sample. Here the three
+groups are assigned in a way that depends on the covariates, so that the
+groups differ before weighting and there is imbalance to remove.
 
 ``` r
 dat <- as.data.frame(X)
-dat$A <- factor(sample(c("low", "medium", "high"), n, replace = TRUE))
+lp <- drop(X %*% c(1, -1, 0, 0, 0))
+prob <- exp(cbind(-lp, 0, lp)); prob <- prob / rowSums(prob)
+dat$A <- factor(
+  c("low", "medium", "high")[apply(prob, 1, function(pr) sample(1:3, 1, prob = pr))],
+  levels = c("low", "medium", "high"))
 
 fit_multi <- energy_balance(A ~ ., data = dat)
-fit_multi
-#> Energy balancing / independence weights (class 'ebw')
+```
+
+`balance()` reports the energy distance of each group to the pooled
+sample, which the weights reduce substantially, along with the
+standardized mean differences and the between-group energy distances.
+
+``` r
+balance(fit_multi)
+#> Balance diagnostics (in-sample)
 #>   treatment type: multinomial 
-#>   groups (K):     3 
 #>   estimand:       ATE 
-#>   kernel:         energy 
-#>   scaling:        std 
-#>   n:              300 
-#>   ESS:            256.0  (85.3% of n)
-#>   per-group ESS:  high=83.6, low=70.5, medium=111.1 
-#>   weight range:   [0.0005201, 0.02927]
+#>   groups:         3  
+#>   per-group ESS:  low=45.7, medium=57.7, high=47.0 
+#> 
+#>   per covariate (standardized mean difference (SMD) vs pooled sample):
+#>  variable  group unadjusted  adjusted
+#>        V1    low    -0.4560 -0.065700
+#>        V2    low     0.5810  0.091300
+#>        V3    low    -0.0363 -0.003150
+#>        V4    low     0.0123  0.016900
+#>        V5    low     0.1150  0.004360
+#>        V1 medium     0.0373  0.019800
+#>        V2 medium     0.0128  0.019700
+#>        V3 medium    -0.0384 -0.005450
+#>        V4 medium     0.0259  0.012300
+#>        V5 medium    -0.2350 -0.014900
+#>        V1   high     0.4220  0.054600
+#>        V2   high    -0.5730 -0.085500
+#>        V3   high     0.0589  0.006270
+#>        V4   high    -0.0279 -0.000948
+#>        V5   high     0.0317  0.008950
+#> 
+#>   energy distance to pooled target (per group):
+#>   group unadjusted adjusted
+#>     low      0.430    0.153
+#>  medium      0.195    0.123
+#>    high      0.408    0.153
+#> 
+#>   between-group energy distance:
+#>  group_j group_k unadjusted adjusted
+#>      low  medium      0.511    0.199
+#>      low    high      0.829    0.222
+#>   medium    high      0.462    0.209
 ```
 
 ### A continuous treatment
@@ -142,7 +180,7 @@ anew <- rbinom(20, 1, 0.5)
 w_new <- predict(fit, newdata = Xnew, treatment = anew)
 summary(w_new)
 #>    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
-#> 0.00000 0.09743 0.49976 0.96231 1.05651 5.55888
+#> 0.02488 0.22876 0.58409 0.65331 0.81623 1.84119
 ```
 
 ### Assessing balance and inspecting the weights
@@ -167,11 +205,11 @@ balance(fit)
 #>        X4    -0.0515 -0.00901
 #>        X5    -0.0205 -0.00277
 #> 
+#>   energy distance to target: unadjusted 0.2835, adjusted 0.08863
+#> 
 #>   between-group energy distance:
 #>  group_j group_k unadjusted adjusted
 #>        0       1      0.528    0.136
-#> 
-#>   energy distance to target: unadjusted 0.2835, adjusted 0.08863
 ```
 
 `plot()` draws a Love plot of the balance and, with `type = "weights"`,

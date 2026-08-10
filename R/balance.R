@@ -264,10 +264,13 @@ balance <- function(object, newdata = NULL, weights = NULL) {
   pooled_sd <- apply(X, 2, stats::sd)
   pooled_sd[!is.finite(pooled_sd) | pooled_sd == 0] <- 1
 
+  n_all <- nrow(X)
+  w_target <- rep(1 / n_all, n_all)              # pooled target (uniform)
   pc_list <- list(); ess <- numeric(K)
+  ed_list <- list()
   for (k in seq_len(K)) {
     ik <- which(groups == k)
-    Xk <- X[ik, , drop = FALSE]; wk <- w[ik]
+    Xk <- X[ik, , drop = FALSE]; wk <- w[ik]; nk <- length(ik)
     raw_mean <- colMeans(Xk)
     wtd_mean <- colSums(wk * Xk) / sum(wk)
     pc_list[[k]] <- data.frame(
@@ -277,8 +280,16 @@ balance <- function(object, newdata = NULL, weights = NULL) {
       adjusted   = (wtd_mean - pooled_mean) / pooled_sd,
       row.names  = NULL, stringsAsFactors = FALSE)
     ess[k] <- sum(wk)^2 / sum(wk^2)
+    # energy distance of group k to the pooled target -- the quantity the
+    # (standard) energy-balancing objective minimizes for each group.
+    ed_list[[k]] <- data.frame(
+      group      = levs[k],
+      unadjusted = .energy_distance(Xk, rep(1 / nk, nk), X, w_target),
+      adjusted   = .energy_distance(Xk, wk / sum(wk),    X, w_target),
+      row.names  = NULL, stringsAsFactors = FALSE)
   }
   per_cov <- do.call(rbind, pc_list)
+  energy_to_target <- do.call(rbind, ed_list)
   names(ess) <- as.character(levs)
   btw <- .between_group_ed(X, groups, w, level_names = levs)
 
@@ -291,6 +302,7 @@ balance <- function(object, newdata = NULL, weights = NULL) {
     n_groups = K,
     group_levels = levs,
     per_covariate = per_cov,
+    energy_distance = energy_to_target,
     between_group = btw,
     ess = ess,
     n = n
@@ -373,17 +385,30 @@ print.balance.ebw <- function(x, digits = 3, ...) {
   pc$unadjusted <- signif(pc$unadjusted, digits)
   pc$adjusted <- signif(pc$adjusted, digits)
   print(pc, row.names = FALSE)
+  # Energy distance of each group to the pooled target -- the quantity the
+  # standard energy-balancing objective minimizes -- shown first.
+  if (!is.null(x$energy_distance)) {
+    if (is.data.frame(x$energy_distance)) {
+      cat("\n  energy distance to pooled target (per group):\n")
+      ed <- x$energy_distance
+      ed$unadjusted <- signif(ed$unadjusted, digits)
+      ed$adjusted <- signif(ed$adjusted, digits)
+      print(ed, row.names = FALSE)
+    } else if (identical(x$treatment_type, "binary")) {
+      cat(sprintf("\n  energy distance to target: unadjusted %.4g, adjusted %.4g\n",
+                  x$energy_distance[["unadjusted"]], x$energy_distance[["adjusted"]]))
+    }
+  }
   if (!is.null(x$between_group)) {
-    cat("\n  between-group energy distance:\n")
+    cat("\n  between-group energy distance",
+        if (isTRUE(x$improved)) " (targeted by the improved estimator)" else "",
+        ":\n", sep = "")
     bg <- x$between_group
     bg$unadjusted <- signif(bg$unadjusted, digits)
     bg$adjusted <- signif(bg$adjusted, digits)
     print(bg, row.names = FALSE)
   }
-  if (identical(x$treatment_type, "binary") && !is.null(x$energy_distance)) {
-    cat(sprintf("\n  energy distance to target: unadjusted %.4g, adjusted %.4g\n",
-                x$energy_distance[["unadjusted"]], x$energy_distance[["adjusted"]]))
-  } else if (identical(x$treatment_type, "continuous")) {
+  if (identical(x$treatment_type, "continuous")) {
     cat(sprintf("\n  overall distance covariance: unadjusted %.4g, adjusted %.4g\n",
                 x$dcov[["unadjusted"]], x$dcov[["adjusted"]]))
     cat(sprintf("  overall distance correlation: unadjusted %.4g, adjusted %.4g\n",
