@@ -18,19 +18,32 @@
 #' treatment vector `treatment` directly. For backward compatibility the older
 #' argument names `trt`, `x`, `method`, and `standardize` are also accepted.
 #'
-#' The treatment type is detected automatically: a treatment that is a factor,
-#' is logical, or takes exactly two distinct values is treated as binary;
-#' a numeric treatment with more than two distinct values is treated as
-#' continuous. Use `treatment_type` to override the detection.
+#' The treatment type is detected automatically. A treatment that is a factor,
+#' character, or logical, or a numeric treatment that takes integer-like values
+#' on a small number of distinct levels, is treated as discrete and routed to
+#' the grouped energy-balancing engine: two levels give binary energy balancing,
+#' more than two give multi-category energy balancing. A numeric treatment with
+#' many distinct values is treated as continuous. Use `treatment_type` to
+#' override the detection.
+#'
+#' With `improved = TRUE` the grouped engine adds the between-group energy
+#' distance to the objective, coupling the groups so that they are balanced both
+#' to the pooled sample and to one another. Standard binary energy balancing is
+#' the special case of two groups with the coupling turned off.
 #'
 #' @param formula a model formula `treatment ~ covariates` (formula interface).
 #' @param data a data frame containing the variables in `formula`.
 #' @param x covariate matrix (matrix interface).
 #' @param treatment treatment vector (matrix interface).
+#' @param improved logical; for a binary or multi-category treatment, add the
+#'   between-group energy distance to the objective (default `FALSE`). Ignored
+#'   for a continuous treatment.
 #' @param estimand target estimand for a binary treatment, either `"ATE"`
 #'   (each group balanced to the pooled sample) or `"ATT"` (the untreated group
-#'   balanced to the treated sample). Ignored for continuous treatments.
-#' @param treatment_type one of `"auto"`, `"binary"`, or `"continuous"`.
+#'   balanced to the treated sample). Ignored for continuous treatments. Only
+#'   `"ATE"` is supported for a multi-category treatment.
+#' @param treatment_type one of `"auto"`, `"binary"`, `"continuous"`,
+#'   `"multinomial"` (alias `"grouped"`).
 #' @param scaling covariate scaling rule (`.scale_covariates`): one of
 #'   `"std"`, `"mad"`, `"range"`, or `"none"`.
 #' @param kernel covariate kernel, either `"energy"` (default) or `"gaussian"`.
@@ -75,8 +88,10 @@
 #' @export
 energy_balance <- function(formula, data,
                            x = NULL, treatment = NULL,
+                           improved = FALSE,
                            estimand = c("ATE", "ATT"),
-                           treatment_type = c("auto", "binary", "continuous"),
+                           treatment_type = c("auto", "binary", "continuous",
+                                              "multinomial", "grouped"),
                            scaling = c("std", "mad", "range", "none"),
                            kernel = c("energy", "gaussian"),
                            eps = 1e-2, lambda = NULL,
@@ -88,6 +103,7 @@ energy_balance <- function(formula, data,
                            ...) {
   cl <- match.call()
   treatment_type <- match.arg(treatment_type)
+  if (treatment_type == "grouped") treatment_type <- "multinomial"
   kernel <- match.arg(kernel)
 
   # ---- backward-compatible argument mapping --------------------------------
@@ -128,14 +144,28 @@ energy_balance <- function(formula, data,
   n <- nrow(X)
 
   # ---- detect treatment type -----------------------------------------------
+  # A treatment is discrete when it is a factor / character / logical, or a
+  # numeric taking integer-like values on a small number of distinct levels.
+  # Two levels -> binary; more -> multinomial; otherwise continuous.
+  disc_max_levels <- 10L
+  nlev <- length(unique(treatment))
+  is_discrete <- is.factor(treatment) || is.character(treatment) ||
+    is.logical(treatment) ||
+    (is.numeric(treatment) && all(is.finite(treatment)) &&
+       isTRUE(all(treatment == round(treatment))))
   if (treatment_type == "auto") {
-    if (is.factor(treatment) || is.logical(treatment) ||
-        length(unique(treatment)) == 2L) {
-      treatment_type <- "binary"
+    if (is_discrete && nlev <= disc_max_levels) {
+      treatment_type <- if (nlev == 2L) "binary" else "multinomial"
     } else {
       treatment_type <- "continuous"
     }
   }
+  if (treatment_type == "binary" && nlev != 2L)
+    stop("A binary treatment must take exactly two distinct values; found ",
+         nlev, ". Use treatment_type = \"multinomial\" for more than two.")
+  if (improved && treatment_type == "continuous")
+    stop("`improved = TRUE` is only available for a binary or multi-category ",
+         "treatment, not a continuous one.")
 
   # ---- scale covariates (store for predict) --------------------------------
   sc <- .scale_covariates(X, method = scaling)
@@ -155,12 +185,9 @@ energy_balance <- function(formula, data,
   }
 
   # ---- fit ------------------------------------------------------------------
-  if (treatment_type == "binary") {
-    engine <- .fit_binary(Xs, treatment, estimand = estimand, level = level,
-                          eps = eps, kernel = kern_X,
-                          max_iter = max_iter, tol = tol)
-    weights <- engine$weights
-  } else {
+  treatment_levels <- NULL
+  n_groups <- NA_integer_
+  if (treatment_type == "continuous") {
     fit_c <- .ebw_continuous(Xs, treatment, lambda = lambda,
                              kernel_X = kern_X, kernel_A = energy_kernel_A,
                              dimension_adj = dimension_adj,
@@ -169,12 +196,40 @@ energy_balance <- function(formula, data,
                              max_iter = max_iter, tol = tol)
     engine <- list(kind = "continuous", fit = fit_c)
     weights <- fit_c$w
+  } else if (treatment_type == "binary" && !improved) {
+    # Standard binary energy balancing: unchanged from the original path so the
+    # fitted weights match earlier releases exactly.
+    engine <- .fit_binary(Xs, treatment, estimand = estimand, level = level,
+                          eps = eps, kernel = kern_X,
+                          max_iter = max_iter, tol = tol)
+    treatment_levels <- engine$levels
+    n_groups <- 2L
+    weights <- engine$weights
+  } else {
+    # Improved binary or multi-category: unified grouped engine.
+    if (treatment_type == "multinomial" && identical(estimand, "ATT"))
+      stop("Only estimand = \"ATE\" is supported for a multi-category treatment.")
+    levs <- sort(unique(treatment))
+    groups <- match(treatment, levs)
+    K <- length(levs)
+    beta <- if (improved) { m <- matrix(1, K, K); diag(m) <- 0; m } else matrix(0, K, K)
+    engine <- .ebw_grouped(Xs, groups, alpha = rep(1, K), beta = beta,
+                           eps = eps, kernel = kern_X,
+                           max_iter = max(max_iter, 30000L), tol = min(tol, 1e-12))
+    treatment_levels <- levs
+    n_groups <- K
+    weights <- engine$w
   }
 
   structure(list(
     weights = weights,
     treatment_type = treatment_type,
-    estimand = if (treatment_type == "binary") estimand else NA_character_,
+    improved = isTRUE(improved) && treatment_type != "continuous",
+    n_groups = n_groups,
+    treatment_levels = treatment_levels,
+    estimand = if (treatment_type == "binary") estimand
+               else if (treatment_type == "multinomial") "ATE"
+               else NA_character_,
     engine = engine,
     scaling = scaling_info,
     kernel = kernel,

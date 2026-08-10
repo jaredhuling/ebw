@@ -28,6 +28,29 @@ test_that("balance() works for a binary treatment, in and out of sample", {
   expect_lte(bo$ess, bo$n + 1e-8)
 })
 
+test_that("balance() works for a multi-category (K=3) treatment", {
+  set.seed(20260810L)
+  n <- 300; p <- 5
+  X <- matrix(rnorm(n * p), n, p)
+  lin <- X %*% c(1, -1, 0.5, 0, 0)
+  pr <- exp(cbind(0, lin, -lin)); pr <- pr / rowSums(pr)
+  tm <- apply(pr, 1, function(pp) sample(1:3, 1, prob = pp))
+  fit <- energy_balance(x = X, treatment = tm)
+
+  b <- balance(fit)
+  expect_s3_class(b, "balance.ebw")
+  expect_equal(b$treatment_type, "multinomial")
+  expect_equal(b$n_groups, 3L)
+  expect_true(is.data.frame(b$per_covariate))
+  expect_true("group" %in% names(b$per_covariate))
+  expect_equal(nrow(b$per_covariate), p * 3L)
+  expect_true(is.data.frame(b$between_group))
+  expect_equal(nrow(b$between_group), 3L)              # 3 pairs for K = 3
+  expect_length(b$ess, 3L)
+  expect_true(all(b$ess > 0))
+  expect_output(print(b), "between-group energy distance")
+})
+
 test_that("balance() works for a continuous treatment, in and out of sample", {
   set.seed(20260809L)
   dat <- sim_continuous_data(n.obs = 300, n.vars = 4, alpha.norm2 = 0.5)

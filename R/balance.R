@@ -149,11 +149,41 @@ balance <- function(object, newdata = NULL, weights = NULL) {
   w <- as.numeric(w)
   sample_label <- if (dat$newdata) "out-of-sample" else "in-sample"
 
-  if (object$treatment_type == "binary") {
+  kind <- object$engine$kind
+  if (kind == "continuous") {
+    .balance_continuous(X, dat$treatment, w, sample_label)
+  } else if (kind == "binary") {
     .balance_binary(X, dat$treatment, w, object, sample_label)
   } else {
-    .balance_continuous(X, dat$treatment, w, sample_label)
+    .balance_grouped(X, dat$treatment, w, object, sample_label)
   }
+}
+
+# Pairwise weighted energy distances between the groups. `groups` is an integer
+# vector in 1..K, `w` the (per-group-normalized-internally) weights. Returns a
+# data frame with one row per pair and the unadjusted / adjusted energy distance.
+#' @keywords internal
+#' @noRd
+.between_group_ed <- function(X, groups, w, level_names = NULL) {
+  X <- as.matrix(X)
+  K <- max(groups)
+  idxs <- lapply(seq_len(K), function(k) which(groups == k))
+  rows <- list()
+  for (k in seq_len(K)) for (j in seq_len(K)) if (j < k) {
+    ij <- idxs[[j]]; ik <- idxs[[k]]
+    if (!length(ij) || !length(ik)) next
+    Xj <- X[ij, , drop = FALSE]; Xk <- X[ik, , drop = FALSE]
+    wj <- w[ij]; wk <- w[ik]
+    nj <- length(ij); nk <- length(ik)
+    un <- .energy_distance(Xj, rep(1 / nj, nj), Xk, rep(1 / nk, nk))
+    ad <- .energy_distance(Xj, wj / sum(wj),    Xk, wk / sum(wk))
+    lj <- if (is.null(level_names)) j else level_names[j]
+    lk <- if (is.null(level_names)) k else level_names[k]
+    rows[[length(rows) + 1L]] <- data.frame(
+      group_j = lj, group_k = lk, unadjusted = un, adjusted = ad,
+      stringsAsFactors = FALSE)
+  }
+  do.call(rbind, rows)
 }
 
 #' @keywords internal
@@ -195,6 +225,11 @@ balance <- function(object, newdata = NULL, weights = NULL) {
   ed_unadj <- .energy_distance(Xb, rep(1 / nb, nb), Xt, rep(1 / nt, nt))
   ed_adj   <- .energy_distance(Xb, wb / sum(wb),   Xt, rep(1 / nt, nt))
 
+  # between-group energy distance (the two treatment groups against each other)
+  levs <- eng$levels
+  groups2 <- match(trt, levs)
+  btw <- .between_group_ed(X, groups2, w, level_names = levs)
+
   structure(list(
     treatment_type = "binary",
     estimand = estimand,
@@ -203,8 +238,62 @@ balance <- function(object, newdata = NULL, weights = NULL) {
     balanced_group = balanced_level,
     per_covariate = per_cov,
     energy_distance = c(unadjusted = ed_unadj, adjusted = ed_adj),
+    between_group = btw,
     ess = sum(wb)^2 / sum(wb^2),
     n = nb
+  ), class = "balance.ebw")
+}
+
+# Balance diagnostics for a grouped fit (improved binary or multi-category):
+# each group's covariate means against the pooled sample, before and after
+# weighting, plus the pairwise between-group energy distances.
+#' @keywords internal
+#' @noRd
+.balance_grouped <- function(X, trt, w, object, sample_label) {
+  if (is.null(trt))
+    stop("Grouped balance requires the treatment labels for the assessed sample.")
+  X <- as.matrix(X)
+  levs <- object$treatment_levels
+  groups <- match(trt, levs)
+  if (anyNA(groups))
+    stop("Assessed-sample treatment values must be among the fitted levels.")
+  K <- length(levs)
+  n <- nrow(X); p <- ncol(X)
+
+  pooled_mean <- colMeans(X)
+  pooled_sd <- apply(X, 2, stats::sd)
+  pooled_sd[!is.finite(pooled_sd) | pooled_sd == 0] <- 1
+
+  pc_list <- list(); ess <- numeric(K)
+  for (k in seq_len(K)) {
+    ik <- which(groups == k)
+    Xk <- X[ik, , drop = FALSE]; wk <- w[ik]
+    raw_mean <- colMeans(Xk)
+    wtd_mean <- colSums(wk * Xk) / sum(wk)
+    pc_list[[k]] <- data.frame(
+      variable   = colnames(X),
+      group      = rep(levs[k], p),
+      unadjusted = (raw_mean - pooled_mean) / pooled_sd,
+      adjusted   = (wtd_mean - pooled_mean) / pooled_sd,
+      row.names  = NULL, stringsAsFactors = FALSE)
+    ess[k] <- sum(wk)^2 / sum(wk^2)
+  }
+  per_cov <- do.call(rbind, pc_list)
+  names(ess) <- as.character(levs)
+  btw <- .between_group_ed(X, groups, w, level_names = levs)
+
+  structure(list(
+    treatment_type = object$treatment_type,
+    estimand = "ATE",
+    improved = isTRUE(object$improved),
+    metric = "standardized mean difference (SMD) vs pooled sample",
+    sample = sample_label,
+    n_groups = K,
+    group_levels = levs,
+    per_covariate = per_cov,
+    between_group = btw,
+    ess = ess,
+    n = n
   ), class = "balance.ebw")
 }
 
@@ -263,22 +352,38 @@ balance <- function(object, newdata = NULL, weights = NULL) {
 #'
 #' @export
 print.balance.ebw <- function(x, digits = 3, ...) {
+  grouped <- !is.null(x$n_groups)
   cat("Balance diagnostics (", x$sample, ")\n", sep = "")
   cat("  treatment type:", x$treatment_type, "\n")
-  if (identical(x$treatment_type, "binary")) {
+  if (grouped) {
+    cat("  estimand:      ", x$estimand, "\n")
+    cat("  groups:        ", x$n_groups,
+        if (isTRUE(x$improved)) "  (improved: cross-group term on)" else "", "\n")
+    cat("  per-group ESS: ",
+        paste(sprintf("%s=%.1f", names(x$ess), x$ess), collapse = ", "), "\n")
+  } else if (identical(x$treatment_type, "binary")) {
     cat("  estimand:      ", x$estimand, "\n")
     cat("  balanced group:", x$balanced_group, "\n")
+    cat(sprintf("  ESS:            %.1f  (n = %d)\n", x$ess, x$n))
+  } else {
+    cat(sprintf("  ESS:            %.1f  (n = %d)\n", x$ess, x$n))
   }
-  cat(sprintf("  ESS:            %.1f  (n = %d)\n", x$ess, x$n))
   cat("\n  per covariate (", x$metric, "):\n", sep = "")
   pc <- x$per_covariate
   pc$unadjusted <- signif(pc$unadjusted, digits)
   pc$adjusted <- signif(pc$adjusted, digits)
   print(pc, row.names = FALSE)
-  if (identical(x$treatment_type, "binary")) {
+  if (!is.null(x$between_group)) {
+    cat("\n  between-group energy distance:\n")
+    bg <- x$between_group
+    bg$unadjusted <- signif(bg$unadjusted, digits)
+    bg$adjusted <- signif(bg$adjusted, digits)
+    print(bg, row.names = FALSE)
+  }
+  if (identical(x$treatment_type, "binary") && !is.null(x$energy_distance)) {
     cat(sprintf("\n  energy distance to target: unadjusted %.4g, adjusted %.4g\n",
                 x$energy_distance[["unadjusted"]], x$energy_distance[["adjusted"]]))
-  } else {
+  } else if (identical(x$treatment_type, "continuous")) {
     cat(sprintf("\n  overall distance covariance: unadjusted %.4g, adjusted %.4g\n",
                 x$dcov[["unadjusted"]], x$dcov[["adjusted"]]))
     cat(sprintf("  overall distance correlation: unadjusted %.4g, adjusted %.4g\n",

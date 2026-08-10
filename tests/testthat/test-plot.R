@@ -14,6 +14,21 @@ test_that("plot.ebw returns ggplot objects (binary)", {
   expect_s3_class(p_w, "ggplot")
 })
 
+test_that("plot.ebw returns ggplot objects (multi-category K=3)", {
+  skip_if_not_installed("ggplot2")
+  set.seed(20260810L)
+  n <- 240; p <- 4
+  X <- matrix(rnorm(n * p), n, p)
+  tm <- sample(1:3, n, replace = TRUE)
+  fit <- energy_balance(x = X, treatment = tm)
+
+  p_love <- plot(fit, type = "balance")
+  expect_s3_class(p_love, "ggplot")
+
+  p_w <- plot(fit, type = "weights")
+  expect_s3_class(p_w, "ggplot")
+})
+
 test_that("plot.ebw returns ggplot objects (continuous)", {
   skip_if_not_installed("ggplot2")
   set.seed(20260809L)

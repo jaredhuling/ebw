@@ -62,24 +62,38 @@ plot.ebw <- function(x, type = c("balance", "weights"),
   # ---- balance (Love) plot -------------------------------------------------
   b <- balance(x, newdata = newdata, weights = weights)
   pc <- b$per_covariate
-  metric_lab <- if (identical(b$treatment_type, "binary"))
-    "absolute standardized mean difference" else "absolute distance correlation"
+  grouped <- !is.null(pc$group)
+  metric_lab <- if (identical(b$treatment_type, "continuous"))
+    "absolute distance correlation"
+  else if (grouped)
+    "absolute standardized mean difference vs pooled sample"
+  else "absolute standardized mean difference"
+
+  # For a grouped fit each covariate appears once per group; order covariates by
+  # their largest unadjusted imbalance across groups and facet by group.
+  if (grouped) {
+    agg <- tapply(abs(pc$unadjusted), pc$variable, max)
+    ord <- names(sort(agg))
+    grp_key <- as.character(pc$group)
+  } else {
+    ord <- pc$variable[order(abs(pc$unadjusted))]
+    grp_key <- rep("", nrow(pc))
+  }
 
   long <- rbind(
-    data.frame(variable = pc$variable, value = abs(pc$unadjusted),
+    data.frame(variable = pc$variable, group = grp_key, value = abs(pc$unadjusted),
                adjustment = "Unadjusted", stringsAsFactors = FALSE),
-    data.frame(variable = pc$variable, value = abs(pc$adjusted),
+    data.frame(variable = pc$variable, group = grp_key, value = abs(pc$adjusted),
                adjustment = "Adjusted", stringsAsFactors = FALSE))
   long$adjustment <- factor(long$adjustment, levels = c("Unadjusted", "Adjusted"))
-  # order covariates by unadjusted imbalance for a readable Love plot
-  ord <- pc$variable[order(abs(pc$unadjusted))]
   long$variable <- factor(long$variable, levels = ord)
 
   seg <- data.frame(variable = factor(pc$variable, levels = ord),
+                    group = grp_key,
                     xstart = abs(pc$unadjusted), xend = abs(pc$adjusted),
                     stringsAsFactors = FALSE)
 
-  ggplot2::ggplot(long, ggplot2::aes(x = value, y = variable)) +
+  g <- ggplot2::ggplot(long, ggplot2::aes(x = value, y = variable)) +
     ggplot2::geom_vline(xintercept = 0.1, linetype = "dashed",
                         colour = "grey50") +
     ggplot2::geom_segment(data = seg,
@@ -93,4 +107,7 @@ plot.ebw <- function(x, type = c("balance", "weights"),
     ggplot2::labs(x = metric_lab, y = NULL, colour = NULL, shape = NULL,
                   title = paste0("Covariate balance (", b$sample, ")")) +
     ggplot2::theme_bw()
+  if (grouped)
+    g <- g + ggplot2::facet_wrap(~ group, labeller = ggplot2::label_both)
+  g
 }

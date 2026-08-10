@@ -1,13 +1,14 @@
 Package: ebw
 Type: Package
-Title: Energy Balancing and Independence Weights for Binary and Continuous Treatments
+Title: Energy Balancing and Independence Weights for Binary, Multi-Category, and Continuous Treatments
 Version: 0.2.0
 Authors@R: c(
     person("Jared", "Huling",  role = c("aut", "cre"), email = "jaredhuling@gmail.com")
     )
-Description: Estimation of covariate balancing weights for causal inference with
-    either a binary treatment, through energy balancing weights, or a continuous
-    treatment, through independence weights. Both weightings solve a
+Description: Estimation of covariate balancing weights for causal inference with a
+    binary or multi-category treatment, through energy balancing weights, or a
+    continuous treatment, through independence weights. An improved variant also
+    balances the treatment groups to one another. The weightings solve a
     simplex-constrained ridge quadratic program whose dual representation yields
     a balancing function that extends to new covariate values, so a fitted
     weighting can predict the weight a new unit would receive out of sample.

@@ -9,8 +9,9 @@ energy_balance(
   data,
   x = NULL,
   treatment = NULL,
+  improved = FALSE,
   estimand = c("ATE", "ATT"),
-  treatment_type = c("auto", "binary", "continuous"),
+  treatment_type = c("auto", "binary", "continuous", "multinomial", "grouped"),
   scaling = c("std", "mad", "range", "none"),
   kernel = c("energy", "gaussian"),
   eps = 0.01,
@@ -36,11 +37,17 @@ energy_balance(
 
 \item{treatment}{treatment vector (matrix interface).}
 
+\item{improved}{logical; for a binary or multi-category treatment, add the
+between-group energy distance to the objective (default \code{FALSE}). Ignored
+for a continuous treatment.}
+
 \item{estimand}{target estimand for a binary treatment, either \code{"ATE"}
 (each group balanced to the pooled sample) or \code{"ATT"} (the untreated group
-balanced to the treated sample). Ignored for continuous treatments.}
+balanced to the treated sample). Ignored for continuous treatments. Only
+\code{"ATE"} is supported for a multi-category treatment.}
 
-\item{treatment_type}{one of \code{"auto"}, \code{"binary"}, or \code{"continuous"}.}
+\item{treatment_type}{one of \code{"auto"}, \code{"binary"}, \code{"continuous"},
+\code{"multinomial"} (alias \code{"grouped"}).}
 
 \item{scaling}{covariate scaling rule (\code{.scale_covariates}): one of
 \code{"std"}, \code{"mad"}, \code{"range"}, or \code{"none"}.}
@@ -99,10 +106,18 @@ supported. In the matrix style, supply the covariate matrix \code{x} and the
 treatment vector \code{treatment} directly. For backward compatibility the older
 argument names \code{trt}, \code{x}, \code{method}, and \code{standardize} are also accepted.
 
-The treatment type is detected automatically: a treatment that is a factor,
-is logical, or takes exactly two distinct values is treated as binary;
-a numeric treatment with more than two distinct values is treated as
-continuous. Use \code{treatment_type} to override the detection.
+The treatment type is detected automatically. A treatment that is a factor,
+character, or logical, or a numeric treatment that takes integer-like values
+on a small number of distinct levels, is treated as discrete and routed to
+the grouped energy-balancing engine: two levels give binary energy balancing,
+more than two give multi-category energy balancing. A numeric treatment with
+many distinct values is treated as continuous. Use \code{treatment_type} to
+override the detection.
+
+With \code{improved = TRUE} the grouped engine adds the between-group energy
+distance to the objective, coupling the groups so that they are balanced both
+to the pooled sample and to one another. Standard binary energy balancing is
+the special case of two groups with the coupling turned off.
 }
 \examples{
 set.seed(20260809)

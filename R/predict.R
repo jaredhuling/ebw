@@ -10,21 +10,23 @@
 .build_newdata <- function(object, newdata) {
   A <- NULL
   if (!is.null(object$terms)) {
-    # formula fit: rebuild the design matrix via the stored terms/xlevels
+    # formula fit: rebuild the design matrix via the stored terms/xlevels. When
+    # the treatment column is present in `newdata` we also recover it, which is
+    # what the grouped / binary predictor needs to map each unit to its group.
+    if (!is.null(object$formula)) {
+      rname <- all.vars(object$formula[[2]])[1]
+      if (is.data.frame(newdata) && !is.null(newdata[[rname]]))
+        A <- newdata[[rname]]
+    }
     mf <- stats::model.frame(object$terms, data = newdata,
                              xlev = object$xlevels)
     X <- stats::model.matrix(object$terms, mf)
     ic <- which(colnames(X) == "(Intercept)")
     if (length(ic)) X <- X[, -ic, drop = FALSE]
-    if (object$treatment_type == "continuous" &&
-        !is.null(object$formula)) {
-      rname <- all.vars(object$formula[[2]])[1]
-      if (!is.null(newdata[[rname]])) A <- newdata[[rname]]
-    }
   } else if (is.list(newdata) && !is.data.frame(newdata) &&
              !is.null(newdata$x)) {
     X <- as.matrix(newdata$x)
-    if (!is.null(newdata$a)) A <- newdata$a
+    A <- newdata$treatment %||% newdata$trt %||% newdata$a
   } else {
     X <- as.matrix(newdata)
   }
@@ -48,11 +50,21 @@
 #' A continuous-treatment prediction requires the new treatment values, since
 #' the balancing function depends on both the covariates and the treatment.
 #'
+#' For a binary or multi-category treatment the balancing function is specific
+#' to a group, so out-of-sample prediction needs each new unit's treatment
+#' level. Supply it through the response column of `newdata` (formula fits), the
+#' `treatment` element of a list, or the separate `treatment` argument. For a
+#' standard binary fit, if no treatment is supplied the primary (treated) group's
+#' predictor is used, matching earlier releases.
+#'
 #' @param object a fitted `"ebw"` object.
 #' @param newdata new data for prediction (see Details). If omitted, the fitted
 #'   weights are returned.
 #' @param type `"weights"` (default) to return predicted weights, or
 #'   `"balancing"` to return the balancing function value at each new point.
+#' @param treatment optional treatment vector for the new units (binary or
+#'   multi-category fits), used to map each unit to its group when it is not
+#'   already carried in `newdata`.
 #' @param ... unused.
 #'
 #' @return A numeric vector of predicted weights (or balancing-function values).
@@ -70,18 +82,54 @@
 #'
 #' @export
 predict.ebw <- function(object, newdata, type = c("weights", "balancing"),
-                        ...) {
+                        treatment = NULL, ...) {
   type <- match.arg(type)
   if (missing(newdata) || is.null(newdata)) {
     return(object$weights)
   }
   nd <- .build_newdata(object, newdata)
-  if (object$treatment_type == "binary") {
-    .predict_binary(object$engine$primary, nd$X, type = type)
-  } else {
-    if (is.null(nd$A))
+  kind <- object$engine$kind
+  A <- if (!is.null(treatment)) treatment else nd$A
+
+  if (kind == "continuous") {
+    if (is.null(A))
       stop("Continuous-treatment prediction requires new treatment values ",
            "(supply them in `newdata`, e.g. list(x = ..., a = ...)).")
-    .predict_continuous(object$engine$fit, nd$X, nd$A, type = type)
+    return(.predict_continuous(object$engine$fit, nd$X, A, type = type))
   }
+
+  if (kind == "binary") {
+    # Group-aware prediction when the treatment is available under the ATE;
+    # otherwise fall back to the primary group's predictor (backward compatible).
+    if (is.null(A) || !identical(object$estimand, "ATE"))
+      return(.predict_binary(object$engine$primary, nd$X, type = type))
+    return(.predict_binary_grouped(object, nd$X, A, type = type))
+  }
+
+  # grouped (improved binary or multi-category)
+  if (is.null(A))
+    stop("Prediction for this fit requires the new units' treatment level ",
+         "(supply it in `newdata` or via the `treatment` argument).")
+  gnew <- match(A, object$treatment_levels)
+  if (anyNA(gnew))
+    stop("New treatment values must be among the fitted levels: ",
+         paste(object$treatment_levels, collapse = ", "), ".")
+  .predict_grouped(object$engine, nd$X, gnew, type = type)
+}
+
+# Predict standard-binary EBW weights per unit, routing each unit through its
+# own group's engine (ATE), so a mixed-treatment newdata is handled correctly.
+#' @keywords internal
+#' @noRd
+.predict_binary_grouped <- function(object, Xnew, A, type = "weights") {
+  eng <- object$engine
+  out <- numeric(nrow(Xnew))
+  for (lv in unique(A)) {
+    e <- eng$engines[[as.character(lv)]]
+    if (is.null(e))
+      stop("Treatment level ", lv, " is not among the fitted levels.")
+    ii <- which(A == lv)
+    out[ii] <- .predict_binary(e, Xnew[ii, , drop = FALSE], type = type)
+  }
+  out
 }

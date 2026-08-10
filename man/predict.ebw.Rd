@@ -4,7 +4,13 @@
 \alias{predict.ebw}
 \title{Predict out-of-sample balancing weights}
 \usage{
-\method{predict}{ebw}(object, newdata, type = c("weights", "balancing"), ...)
+\method{predict}{ebw}(
+  object,
+  newdata,
+  type = c("weights", "balancing"),
+  treatment = NULL,
+  ...
+)
 }
 \arguments{
 \item{object}{a fitted \code{"ebw"} object.}
@@ -14,6 +20,10 @@ weights are returned.}
 
 \item{type}{\code{"weights"} (default) to return predicted weights, or
 \code{"balancing"} to return the balancing function value at each new point.}
+
+\item{treatment}{optional treatment vector for the new units (binary or
+multi-category fits), used to map each unit to its group when it is not
+already carried in \code{newdata}.}
 
 \item{...}{unused.}
 }
@@ -35,6 +45,13 @@ and factor levels; for the matrix interface, \code{newdata} may be a matrix of
 covariates or a list with elements \code{x} and (for a continuous treatment) \code{a}.
 A continuous-treatment prediction requires the new treatment values, since
 the balancing function depends on both the covariates and the treatment.
+
+For a binary or multi-category treatment the balancing function is specific
+to a group, so out-of-sample prediction needs each new unit's treatment
+level. Supply it through the response column of \code{newdata} (formula fits), the
+\code{treatment} element of a list, or the separate \code{treatment} argument. For a
+standard binary fit, if no treatment is supplied the primary (treated) group's
+predictor is used, matching earlier releases.
 }
 \examples{
 set.seed(20260809)
